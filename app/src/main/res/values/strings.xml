@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">NetDiag</string>
+    <string name="accessibility_service_desc">OneTap Cleaner provides a floating overlay for quick network diagnostics and device actions.</string>
+</resources>

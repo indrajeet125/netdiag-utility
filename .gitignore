@@ -1,0 +1,100 @@
+# ==============================================================================
+# Git Ignore for NetDiag Utility (Android / Kotlin / Gradle / Compose)
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# Built Application Artifacts, Packages & Bytecode
+# ------------------------------------------------------------------------------
+*.apk
+*.ap_
+*.aab
+*.dex
+*.class
+*.aar
+
+# ------------------------------------------------------------------------------
+# Gradle Build Directories, Daemons & Dependency Caches
+# ------------------------------------------------------------------------------
+.gradle/
+build/
+*/build/
+app/build/
+.gradletasknamecache
+
+# ------------------------------------------------------------------------------
+# Kotlin Compiler & KSP Daemon Artifacts
+# ------------------------------------------------------------------------------
+.kotlin/
+kotlin-js-store/
+
+# ------------------------------------------------------------------------------
+# Local Configuration & Machine-Specific Files (SDK Paths)
+# ------------------------------------------------------------------------------
+local.properties
+.bundle/
+
+# ------------------------------------------------------------------------------
+# Android Studio / IntelliJ IDEA Workspace Artifacts
+# ------------------------------------------------------------------------------
+*.iml
+.idea/
+!.idea/codeStyles/
+!.idea/copyright/
+.idea/workspace.xml
+.idea/tasks.xml
+.idea/caches/
+.idea/libraries/
+.idea/modules/
+.idea/assetWizardSettings.xml
+.idea/compiler.xml
+.idea/misc.xml
+.idea/shelf/
+.idea/vcs.xml
+
+# ------------------------------------------------------------------------------
+# Diagnostic Logs, Crash Dumps & Profiler Captures
+# ------------------------------------------------------------------------------
+*.log
+*.hprof
+captures/
+device_screenshots/
+*.png.backup
+live_device_screen.png
+
+# ------------------------------------------------------------------------------
+# Internal Developer, Architecture & AI Agent Context (Local Only)
+# ------------------------------------------------------------------------------
+CONTEXT.md
+context.md
+*.context.md
+
+# ------------------------------------------------------------------------------
+# Security: Keystores, Signing Keys & Certificates (NEVER COMMIT)
+# ------------------------------------------------------------------------------
+*.jks
+*.keystore
+*.p12
+*.key
+signing/
+release-key.properties
+
+# ------------------------------------------------------------------------------
+# Operating System Ephemera
+# ------------------------------------------------------------------------------
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+.directory
