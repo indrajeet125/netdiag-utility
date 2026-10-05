@@ -45,6 +45,57 @@ class AppPreferencesRepository @Inject constructor(
     )
     val dynamicColorEnabled: StateFlow<Boolean> = _dynamicColorEnabled.asStateFlow()
 
+    private val _dashboardCategories = MutableStateFlow(loadDashboardCategories())
+    val dashboardCategories: StateFlow<List<com.netdiag.tool.domain.model.DashboardCategory>> = _dashboardCategories.asStateFlow()
+
+    private fun loadDashboardCategories(): List<com.netdiag.tool.domain.model.DashboardCategory> {
+        val raw = prefs.getString(KEY_DASHBOARD_CATEGORIES, null) ?: return com.netdiag.tool.domain.model.DashboardCategory.DEFAULT_ORDER
+        return try {
+            val list = raw.split(",").mapNotNull { name ->
+                try {
+                    com.netdiag.tool.domain.model.DashboardCategory.valueOf(name.trim())
+                } catch (_: Exception) {
+                    null
+                }
+            }
+            if (list.size == com.netdiag.tool.domain.model.DashboardCategory.values().size) {
+                list
+            } else {
+                com.netdiag.tool.domain.model.DashboardCategory.DEFAULT_ORDER
+            }
+        } catch (_: Exception) {
+            com.netdiag.tool.domain.model.DashboardCategory.DEFAULT_ORDER
+        }
+    }
+
+    fun setDashboardCategories(order: List<com.netdiag.tool.domain.model.DashboardCategory>) {
+        val serialized = order.joinToString(",") { it.name }
+        prefs.edit().putString(KEY_DASHBOARD_CATEGORIES, serialized).apply()
+        _dashboardCategories.value = order
+    }
+
+    fun resetDashboardCategories() {
+        prefs.edit().remove(KEY_DASHBOARD_CATEGORIES).apply()
+        _dashboardCategories.value = com.netdiag.tool.domain.model.DashboardCategory.DEFAULT_ORDER
+    }
+
+    private val _favoriteServices = MutableStateFlow(
+        prefs.getStringSet(KEY_FAVORITE_SERVICES, setOf("speed_test", "cell_telemetry", "sim_identity", "device_telemetry"))
+            ?: setOf("speed_test", "cell_telemetry", "sim_identity", "device_telemetry")
+    )
+    val favoriteServices: StateFlow<Set<String>> = _favoriteServices.asStateFlow()
+
+    fun toggleFavoriteService(serviceId: String) {
+        val current = _favoriteServices.value.toMutableSet()
+        if (current.contains(serviceId)) {
+            current.remove(serviceId)
+        } else {
+            current.add(serviceId)
+        }
+        prefs.edit().putStringSet(KEY_FAVORITE_SERVICES, current).apply()
+        _favoriteServices.value = current
+    }
+
     fun setOnboardingCompleted(completed: Boolean) {
         prefs.edit().putBoolean(KEY_ONBOARDING_COMPLETED, completed).apply()
         _onboardingCompleted.value = completed
@@ -75,5 +126,7 @@ class AppPreferencesRepository @Inject constructor(
         private const val KEY_ONETAP_ENABLED = "key_onetap_enabled"
         private const val KEY_THEME_MODE = "key_theme_mode"
         private const val KEY_DYNAMIC_COLOR = "key_dynamic_color"
+        private const val KEY_DASHBOARD_CATEGORIES = "key_dashboard_categories"
+        private const val KEY_FAVORITE_SERVICES = "key_favorite_services"
     }
 }

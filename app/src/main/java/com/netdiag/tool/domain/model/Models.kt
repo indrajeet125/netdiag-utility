@@ -77,7 +77,11 @@ data class SimInfo(
     val isDefaultData: Boolean = false,
     val isRoaming: Boolean = false,
     val simState: String = "UNKNOWN",
-    val isEmbedded: Boolean = false
+    val isEmbedded: Boolean = false,
+    val iccId: String? = null,
+    val imsi: String? = null,
+    val msisdn: String? = null,
+    val cardId: Int = -1
 )
 
 data class CellData(
@@ -100,6 +104,12 @@ data class CellData(
     val isServing: Boolean = false,
     val mcc: String? = null,
     val mnc: String? = null,
+    // 2G / 3G specific
+    val rscp: Int? = null,
+    val ecNo: Double? = null,
+    val ber: Int? = null,
+    val bsic: Int? = null,
+    val lac: Int? = null,
     // NR-specific
     val ssRsrp: Int? = null,
     val ssRsrq: Int? = null,

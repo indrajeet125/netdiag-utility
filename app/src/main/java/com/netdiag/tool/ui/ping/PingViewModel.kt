@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.netdiag.tool.data.repository.PingRepository
 import com.netdiag.tool.domain.model.*
+import com.netdiag.tool.domain.strategy.PingStrategyFactory
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,7 +26,8 @@ data class PingUiState(
 
 @HiltViewModel
 class PingViewModel @Inject constructor(
-    private val pingRepo: PingRepository
+    private val pingRepo: PingRepository,
+    private val pingStrategyFactory: PingStrategyFactory
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(PingUiState())
@@ -44,15 +46,39 @@ class PingViewModel @Inject constructor(
 
         pingJob = viewModelScope.launch {
             try {
-                val report = when (config.type) {
-                    PingType.HTTP -> pingRepo.executeHttpPing(config)
-                    PingType.TCP -> pingRepo.executeTcpPing(config)
-                    PingType.ICMP -> pingRepo.executeIcmpPing(config)
+                // Strategy Pattern Execution
+                val strategy = pingStrategyFactory.getStrategy(config.type)
+                val liveList = mutableListOf<SinglePingProbe>()
+                
+                strategy.execute(config).collect { probe ->
+                    liveList.add(probe)
+                    _state.value = _state.value.copy(liveProbes = liveList.toList())
                 }
+
+                // Compute final report when stream completes
+                val transmitted = liveList.size
+                val received = liveList.count { it.isSuccess }
+                val lossPercent = if (transmitted > 0) ((transmitted - received).toFloat() / transmitted) * 100f else 0f
+                val latencies = liveList.filter { it.isSuccess }.map { it.totalTimeMs }
+                val minMs = latencies.minOrNull() ?: 0L
+                val maxMs = latencies.maxOrNull() ?: 0L
+                val avgMs = if (latencies.isNotEmpty()) latencies.average() else 0.0
+
+                val report = PingReport(
+                    config = config,
+                    probes = liveList.toList(),
+                    transmitted = transmitted,
+                    received = received,
+                    lossPercent = lossPercent,
+                    minMs = minMs,
+                    avgMs = avgMs,
+                    maxMs = maxMs
+                )
+
                 _state.value = _state.value.copy(
                     isRunning = false,
                     report = report,
-                    liveProbes = report.probes
+                    liveProbes = liveList.toList()
                 )
             } catch (e: Exception) {
                 _state.value = _state.value.copy(

@@ -128,13 +128,13 @@ class OneTapAccessibilityService : AccessibilityService() {
 
         // Action Buttons
         addActionItem("⚡  Ping Diagnostics", "App & Socket Latency") {
-            launchApp("ping/http")
+            launchApp("tests")
         }
         addActionItem("📶  Cellular Telemetry", "RF Tower & Signal") {
             launchApp("network")
         }
         addActionItem("📱  Dual SIM State", "Carrier & Registration") {
-            launchApp("sim_info")
+            launchApp("sim_identity")
         }
         addActionItem("🌐  Network Settings", "Android Radio Policies") {
             openSystemSettings()
