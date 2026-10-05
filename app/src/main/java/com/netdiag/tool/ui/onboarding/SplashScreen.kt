@@ -1,17 +1,21 @@
 package com.netdiag.tool.ui.onboarding
 
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CellTower
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.netdiag.tool.ui.theme.*
@@ -50,11 +54,11 @@ fun SplashScreen(
                 modifier = Modifier
                     .size(96.dp)
                     .scale(scale.value)
-                    .androidx.compose.ui.draw.clip(RoundedCornerShape(22.dp)),
+                    .clip(RoundedCornerShape(22.dp)),
                 contentAlignment = Alignment.Center
             ) {
-                androidx.compose.foundation.Image(
-                    painter = androidx.compose.ui.res.painterResource(id = com.netdiag.tool.R.drawable.app_logo),
+                Image(
+                    painter = painterResource(id = com.netdiag.tool.R.drawable.app_logo),
                     contentDescription = "Network Tools Logo",
                     modifier = Modifier.fillMaxSize()
                 )

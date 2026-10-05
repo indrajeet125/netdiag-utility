@@ -1,8 +1,10 @@
 package com.netdiag.tool.ui.navigation
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
@@ -10,7 +12,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -90,12 +94,12 @@ fun AppNavigation(
                     modifier = Modifier.padding(horizontal = 24.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    androidx.compose.foundation.Image(
-                        painter = androidx.compose.ui.res.painterResource(id = com.netdiag.tool.R.drawable.app_logo),
+                    Image(
+                        painter = painterResource(id = com.netdiag.tool.R.drawable.app_logo),
                         contentDescription = "Logo",
                         modifier = Modifier
                             .size(42.dp)
-                            .androidx.compose.ui.draw.clip(RoundedCornerShape(10.dp))
+                            .clip(RoundedCornerShape(10.dp))
                     )
                     Spacer(modifier = Modifier.width(14.dp))
                     Column {
@@ -135,8 +139,17 @@ fun AppNavigation(
                 // TESTING
                 DrawerSection(title = "TESTING")
                 DrawerItem(
-                    label = "Ping & Latency",
+                    label = "Speed Test",
                     icon = Icons.Outlined.Speed,
+                    isSelected = currentRoute == "speed_test",
+                    onClick = {
+                        coroutineScope.launch { drawerState.close() }
+                        navController.navigate("speed_test") { launchSingleTop = true }
+                    }
+                )
+                DrawerItem(
+                    label = "Ping & Latency",
+                    icon = Icons.Outlined.NetworkCheck,
                     isSelected = currentRoute == "tests",
                     onClick = {
                         coroutineScope.launch { drawerState.close() }
@@ -156,6 +169,15 @@ fun AppNavigation(
                     }
                 )
                 DrawerItem(
+                    label = "SIM Security & IMSI",
+                    icon = Icons.Outlined.Badge,
+                    isSelected = currentRoute == "sim_identity",
+                    onClick = {
+                        coroutineScope.launch { drawerState.close() }
+                        navController.navigate("sim_identity") { launchSingleTop = true }
+                    }
+                )
+                DrawerItem(
                     label = "Network Mode Policy",
                     icon = Icons.Outlined.SettingsInputAntenna,
                     isSelected = currentRoute == "network_mode",
@@ -167,6 +189,15 @@ fun AppNavigation(
 
                 // UTILITIES
                 DrawerSection(title = "UTILITIES")
+                DrawerItem(
+                    label = "Device & Hardware Telemetry",
+                    icon = Icons.Outlined.PhoneAndroid,
+                    isSelected = currentRoute == "device_info",
+                    onClick = {
+                        coroutineScope.launch { drawerState.close() }
+                        navController.navigate("device_info") { launchSingleTop = true }
+                    }
+                )
                 DrawerItem(
                     label = "Tools Hub",
                     icon = Icons.Outlined.Build,
@@ -329,6 +360,9 @@ fun AppNavigation(
                         onNavigateToNetworkMode = { navController.navigate("network_mode") },
                         onNavigateToSettings = { navController.navigate("settings") },
                         onNavigateToOneTap = { navController.navigate("onetap_setup") },
+                        onNavigateToDeviceInfo = { navController.navigate("device_info") },
+                        onNavigateToSimIdentity = { navController.navigate("sim_identity") },
+                        onNavigateToRoute = { route -> navController.navigate(route) },
                         onOpenDrawer = { coroutineScope.launch { drawerState.open() } }
                     )
                 }
@@ -354,6 +388,51 @@ fun AppNavigation(
                 }
 
                 // ── Child Screens ──
+                composable("speed_test") {
+                    Scaffold(
+                        topBar = {
+                            TopAppBar(
+                                title = {
+                                    Text(
+                                        text = "Speed Test",
+                                        style = MaterialTheme.typography.titleLarge.copy(
+                                            color = MaterialTheme.colorScheme.onBackground
+                                        )
+                                    )
+                                },
+                                navigationIcon = {
+                                    IconButton(onClick = { navController.popBackStack() }) {
+                                        Icon(
+                                            imageVector = Icons.Default.ArrowBack,
+                                            contentDescription = "Back",
+                                            tint = MaterialTheme.colorScheme.onBackground
+                                        )
+                                    }
+                                },
+                                colors = TopAppBarDefaults.topAppBarColors(
+                                    containerColor = MaterialTheme.colorScheme.background
+                                )
+                            )
+                        }
+                    ) { padding ->
+                        Box(modifier = Modifier.padding(padding)) {
+                            com.netdiag.tool.ui.speed.SpeedTestScreen()
+                        }
+                    }
+                }
+
+                composable("device_info") {
+                    com.netdiag.tool.ui.device.DeviceInfoScreen(
+                        onNavigateBack = { navController.popBackStack() }
+                    )
+                }
+
+                composable("sim_identity") {
+                    com.netdiag.tool.ui.device.SimIdentityScreen(
+                        onNavigateBack = { navController.popBackStack() }
+                    )
+                }
+
                 composable("cache_cleaner") {
                     com.netdiag.tool.ui.cache.CacheCleanerScreen(
                         onNavigateBack = { navController.popBackStack() }

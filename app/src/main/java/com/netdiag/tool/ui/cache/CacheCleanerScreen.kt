@@ -157,13 +157,26 @@ fun CacheCleanerScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column {
-                            Text(
-                                text = "${selectedApps.size} apps selected",
-                                style = MaterialTheme.typography.titleMedium.copy(
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "${selectedApps.size} apps selected",
+                                    style = MaterialTheme.typography.titleMedium.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
                                 )
-                            )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text(
+                                    text = "Deselect",
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontWeight = FontWeight.Bold
+                                    ),
+                                    modifier = Modifier
+                                        .clickable { viewModel.selectAll(false) }
+                                        .padding(horizontal = 4.dp, vertical = 2.dp)
+                                )
+                            }
                             Text(
                                 text = "${CacheViewModel.formatBytes(selectedCacheBytes)} removable cache",
                                 style = MaterialTheme.typography.bodySmall.copy(
@@ -454,6 +467,103 @@ fun CacheCleanerScreen(
                 }
 
                 Spacer(modifier = Modifier.height(14.dp))
+            }
+
+            // Select All / Deselect All Control Bar
+            if (filteredList.isNotEmpty()) {
+                val nonIgnoredFiltered = filteredList.filter { !it.isIgnored }
+                val allFilteredSelected = nonIgnoredFiltered.isNotEmpty() && nonIgnoredFiltered.all { it.isSelected }
+                val selectedCount = nonIgnoredFiltered.count { it.isSelected }
+
+                item {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .clickable {
+                                        viewModel.selectApps(filteredList.map { it.packageName }, !allFilteredSelected)
+                                    }
+                            ) {
+                                Checkbox(
+                                    checked = allFilteredSelected,
+                                    onCheckedChange = { isChecked ->
+                                        viewModel.selectApps(filteredList.map { it.packageName }, isChecked)
+                                    },
+                                    colors = CheckboxDefaults.colors(
+                                        checkedColor = MaterialTheme.colorScheme.primary,
+                                        uncheckedColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Column {
+                                    Text(
+                                        text = if (allFilteredSelected) "Deselect All" else "Select All",
+                                        style = MaterialTheme.typography.titleSmall.copy(
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            fontSize = 13.5.sp
+                                        )
+                                    )
+                                    Text(
+                                        text = "$selectedCount of ${filteredList.size} apps selected",
+                                        style = MaterialTheme.typography.bodySmall.copy(
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            fontSize = 11.sp
+                                        )
+                                    )
+                                }
+                            }
+
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                OutlinedButton(
+                                    onClick = { viewModel.selectApps(filteredList.map { it.packageName }, true) },
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                    modifier = Modifier.height(34.dp),
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
+                                ) {
+                                    Text(
+                                        text = "Select All",
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            color = MaterialTheme.colorScheme.primary,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    )
+                                }
+
+                                OutlinedButton(
+                                    onClick = { viewModel.selectApps(filteredList.map { it.packageName }, false) },
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                    modifier = Modifier.height(34.dp),
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                                ) {
+                                    Text(
+                                        text = "Deselect All",
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             // App List

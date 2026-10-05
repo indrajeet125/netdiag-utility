@@ -28,7 +28,13 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val route by targetRoute.collectAsState()
-            NetDiagTheme {
+            val themeMode by preferencesRepository.themeMode.collectAsState()
+            val dynamicColor by preferencesRepository.dynamicColorEnabled.collectAsState()
+
+            NetDiagTheme(
+                themeMode = themeMode,
+                dynamicColor = dynamicColor
+            ) {
                 AppNavigation(
                     preferencesRepository = preferencesRepository,
                     initialTargetRoute = route,

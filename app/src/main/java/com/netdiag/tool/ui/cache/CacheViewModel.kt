@@ -205,6 +205,17 @@ class CacheViewModel @Inject constructor(
         }
     }
 
+    fun selectApps(packageNames: Collection<String>, select: Boolean) {
+        val targetSet = packageNames.toSet()
+        _appList.value = _appList.value.map {
+            if (targetSet.contains(it.packageName)) {
+                it.copy(isSelected = select && !it.isIgnored)
+            } else {
+                it
+            }
+        }
+    }
+
     fun toggleIgnoreApp(packageName: String) {
         _appList.value = _appList.value.map {
             if (it.packageName == packageName) {
