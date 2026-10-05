@@ -11,9 +11,12 @@ import android.telephony.SubscriptionManager
 import com.netdiag.tool.domain.model.*
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 import java.net.InetAddress
 import java.net.InetSocketAddress
@@ -127,6 +130,22 @@ class TelephonyRepository @Inject constructor(
 
         val isRoaming = try { subTm.isNetworkRoaming } catch (_: Exception) { false }
 
+        // Extract sensitive identifiers (ICCID, MSISDN, IMSI)
+        var iccId: String? = try { subInfo.iccId?.takeIf { it.isNotBlank() } } catch (_: Exception) { null }
+        if (iccId.isNullOrBlank()) {
+            iccId = try { subTm.simSerialNumber?.takeIf { it.isNotBlank() } } catch (_: Exception) { null }
+        }
+
+        var msisdn: String? = try { subInfo.number?.takeIf { it.isNotBlank() } } catch (_: Exception) { null }
+        if (msisdn.isNullOrBlank()) {
+            msisdn = try { subTm.line1Number?.takeIf { it.isNotBlank() } } catch (_: Exception) { null }
+        }
+
+        val imsi: String? = try { subTm.subscriberId?.takeIf { it.isNotBlank() } } catch (_: Exception) { null }
+        val cardId: Int = try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) subInfo.cardId else -1
+        } catch (_: Exception) { -1 }
+
         val simInfo = SimInfo(
             subscriptionId = subInfo.subscriptionId,
             slotIndex = subInfo.simSlotIndex,
@@ -138,7 +157,11 @@ class TelephonyRepository @Inject constructor(
             countryIso = subInfo.countryIso.ifBlank { subTm.networkCountryIso },
             isDefaultData = subInfo.subscriptionId == defaultDataSubId,
             isRoaming = isRoaming,
-            isEmbedded = subInfo.isEmbedded
+            isEmbedded = subInfo.isEmbedded,
+            iccId = iccId,
+            imsi = imsi,
+            msisdn = msisdn,
+            cardId = cardId
         )
 
         // Get cell info
@@ -310,28 +333,54 @@ class TelephonyRepository @Inject constructor(
             is CellInfoGsm -> {
                 val id = cellInfo.cellIdentity
                 val ss = cellInfo.cellSignalStrength
+                val ta = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    try {
+                        val m = ss.javaClass.getMethod("getTimingAdvance")
+                        (m.invoke(ss) as? Int)?.takeIf { it != Int.MAX_VALUE && it >= 0 }
+                    } catch (_: Exception) { null }
+                } else null
+                val bsic = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    id.bsic.takeIf { it != Int.MAX_VALUE }
+                } else null
+                val ber = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    ss.bitErrorRate.takeIf { it != Int.MAX_VALUE && it >= 0 }
+                } else null
+
                 CellData(
                     rat = RadioAccessTechnology.EDGE,
                     cellId = id.cid.toLong().takeIf { it != Int.MAX_VALUE.toLong() && it > 0 },
+                    lac = id.lac.takeIf { it != Int.MAX_VALUE },
+                    bsic = bsic,
                     arfcn = id.arfcn.takeIf { it != Int.MAX_VALUE },
-                    rssi = ss.dbm,
+                    rssi = ss.dbm.takeIf { it != Int.MAX_VALUE },
+                    timingAdvance = ta,
+                    ber = ber,
                     signalLevel = ss.level,
                     mcc = id.mccString,
-                    mnc = id.mncString
+                    mnc = id.mncString,
+                    timestampNs = cellInfo.timestampMillis * 1_000_000L
                 )
             }
             is CellInfoWcdma -> {
                 val id = cellInfo.cellIdentity
                 val ss = cellInfo.cellSignalStrength
+                val ecNo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    ss.ecNo.takeIf { it != Int.MAX_VALUE }?.toDouble()
+                } else null
+
                 CellData(
                     rat = RadioAccessTechnology.UMTS,
                     pci = id.psc.takeIf { it != Int.MAX_VALUE },
                     cellId = id.cid.toLong().takeIf { it != Int.MAX_VALUE.toLong() && it > 0 },
+                    lac = id.lac.takeIf { it != Int.MAX_VALUE },
                     arfcn = id.uarfcn.takeIf { it != Int.MAX_VALUE },
-                    rssi = ss.dbm,
+                    rscp = ss.dbm.takeIf { it != Int.MAX_VALUE },
+                    rssi = ss.dbm.takeIf { it != Int.MAX_VALUE },
+                    ecNo = ecNo,
                     signalLevel = ss.level,
                     mcc = id.mccString,
-                    mnc = id.mncString
+                    mnc = id.mncString,
+                    timestampNs = cellInfo.timestampMillis * 1_000_000L
                 )
             }
             else -> null
@@ -397,6 +446,20 @@ class PingRepository @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
     private val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+
+    fun startPing(config: PingConfiguration): Flow<SinglePingProbe> = flow {
+        for (i in 1..config.count) {
+            val probe = when (config.type) {
+                PingType.HTTP -> doHttpProbe(i, config)
+                PingType.TCP -> doTcpProbe(i, config)
+                PingType.ICMP -> doIcmpProbe(i, config)
+            }
+            emit(probe)
+            if (i < config.count) {
+                kotlinx.coroutines.delay(config.intervalMs)
+            }
+        }
+    }.flowOn(Dispatchers.IO)
 
     suspend fun executeHttpPing(config: PingConfiguration): PingReport = withContext(Dispatchers.IO) {
         val probes = mutableListOf<SinglePingProbe>()

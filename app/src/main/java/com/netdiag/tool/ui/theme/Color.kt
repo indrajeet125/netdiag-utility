@@ -1,5 +1,8 @@
 package com.netdiag.tool.ui.theme
 
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.ui.graphics.Color
 
 // ── Dark Palette (Engineering Slate / Deep Navy) ──
@@ -36,19 +39,78 @@ val StatusRedBg = Color(0x1AFF5252)
 val StatusBlue = Color(0xFF2979FF)
 val StatusBlueBg = Color(0x1A2979FF)
 
-// Backward-compatible dark aliases
-val CanvasNavy = CanvasNavyDark
-val SurfaceBase = SurfaceBaseDark
-val SurfaceElevated = SurfaceElevatedDark
-val SurfaceHighlight = SurfaceHighlightDark
-val BorderSubtle = BorderSubtleDark
-val TextPrimary = TextPrimaryDark
-val TextSecondary = TextSecondaryDark
-val TextTertiary = TextTertiaryDark
-val AccentCyan = AccentCyanDark
-val AccentCyanBg = AccentCyanBgDark
-val AccentCyanBorder = Color(0x4D00E5FF)
-val StatusGreenBorder = Color(0x4D00E676)
-val StatusAmberBorder = Color(0x4DFFB300)
-val StatusRedBorder = Color(0x4DFF5252)
-val StatusBlueBorder = Color(0x4D2979FF)
+// Dynamic theme-aware aliases (Adapt automatically to Light, Dark & System Theme)
+val CanvasNavy: Color
+    @Composable
+    @ReadOnlyComposable
+    get() = MaterialTheme.colorScheme.background
+
+val SurfaceBase: Color
+    @Composable
+    @ReadOnlyComposable
+    get() = MaterialTheme.colorScheme.surface
+
+val SurfaceElevated: Color
+    @Composable
+    @ReadOnlyComposable
+    get() = MaterialTheme.colorScheme.surfaceVariant
+
+val SurfaceHighlight: Color
+    @Composable
+    @ReadOnlyComposable
+    get() = MaterialTheme.colorScheme.surfaceContainerHighest
+
+val BorderSubtle: Color
+    @Composable
+    @ReadOnlyComposable
+    get() = MaterialTheme.colorScheme.outline
+
+val TextPrimary: Color
+    @Composable
+    @ReadOnlyComposable
+    get() = MaterialTheme.colorScheme.onSurface
+
+val TextSecondary: Color
+    @Composable
+    @ReadOnlyComposable
+    get() = MaterialTheme.colorScheme.onSurfaceVariant
+
+val TextTertiary: Color
+    @Composable
+    @ReadOnlyComposable
+    get() = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+
+val AccentCyan: Color
+    @Composable
+    @ReadOnlyComposable
+    get() = MaterialTheme.colorScheme.primary
+
+val AccentCyanBg: Color
+    @Composable
+    @ReadOnlyComposable
+    get() = MaterialTheme.colorScheme.primaryContainer
+
+val AccentCyanBorder: Color
+    @Composable
+    @ReadOnlyComposable
+    get() = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
+
+val StatusGreenBorder: Color
+    @Composable
+    @ReadOnlyComposable
+    get() = StatusGreen.copy(alpha = 0.35f)
+
+val StatusAmberBorder: Color
+    @Composable
+    @ReadOnlyComposable
+    get() = StatusAmber.copy(alpha = 0.35f)
+
+val StatusRedBorder: Color
+    @Composable
+    @ReadOnlyComposable
+    get() = StatusRed.copy(alpha = 0.35f)
+
+val StatusBlueBorder: Color
+    @Composable
+    @ReadOnlyComposable
+    get() = StatusBlue.copy(alpha = 0.35f)

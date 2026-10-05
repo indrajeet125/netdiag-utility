@@ -26,9 +26,11 @@ import com.netdiag.tool.ui.components.*
 import com.netdiag.tool.ui.dashboard.DashboardViewModel
 import com.netdiag.tool.ui.history.HistoryScreen
 import com.netdiag.tool.ui.ping.PingScreen
+import com.netdiag.tool.ui.speed.SpeedTestScreen
 import com.netdiag.tool.ui.theme.*
 
 enum class TestTab {
+    SPEED,
     PING,
     CHECKUP,
     HISTORY
@@ -37,7 +39,7 @@ enum class TestTab {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TestsScreen(
-    initialTab: TestTab = TestTab.PING,
+    initialTab: TestTab = TestTab.SPEED,
     onOpenSettings: () -> Unit
 ) {
     var selectedTab by remember { mutableStateOf(initialTab) }
@@ -107,6 +109,9 @@ fun TestsScreen(
             Spacer(modifier = Modifier.height(4.dp))
 
             when (selectedTab) {
+                TestTab.SPEED -> {
+                    SpeedTestScreen()
+                }
                 TestTab.PING -> {
                     PingScreen()
                 }

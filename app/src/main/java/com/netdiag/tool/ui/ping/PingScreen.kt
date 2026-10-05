@@ -18,6 +18,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -264,6 +265,27 @@ fun PingScreen(
                         }
                     }
 
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Live Diagnostic Progress Tracker (e.g. "Running in 10 • Status 20%")
+                    DiagnosticProgressBar(
+                        currentStep = probes.size,
+                        totalSteps = state.config.count,
+                        targetHost = state.config.target,
+                        lastRttMs = probes.lastOrNull()?.totalTimeMs,
+                        isRunning = isRunning
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Real-Time Waveform Graph
+                    PingOscilloscopeChart(probes = probes)
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Packet Stream Matrix
+                    PacketMatrixGrid(probes = probes, totalCount = state.config.count)
+
                     Spacer(modifier = Modifier.height(20.dp))
 
                     Text(
@@ -395,6 +417,212 @@ fun ProbeRow(probe: SinglePingProbe) {
                     color = if (probe.isSuccess) TextPrimary else StatusRed
                 )
             )
+        }
+    }
+}
+
+@Composable
+fun PingOscilloscopeChart(
+    probes: List<SinglePingProbe>,
+    modifier: Modifier = Modifier
+) {
+    if (probes.isEmpty()) return
+
+    val accentColor = AccentCyan
+    val statusRedColor = StatusRed
+    val gridColor = BorderSubtle.copy(alpha = 0.4f)
+
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = SurfaceElevated,
+        border = BorderStroke(1.dp, BorderSubtle),
+        modifier = modifier
+            .fillMaxWidth()
+            .height(120.dp)
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "REAL-TIME LATENCY OSCILLOSCOPE",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        color = TextSecondary,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp
+                    )
+                )
+                val lastMs = probes.lastOrNull()?.totalTimeMs ?: 0
+                Text(
+                    text = "$lastMs ms",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        color = if (lastMs > 100) StatusAmber else AccentCyan,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold
+                    )
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            androidx.compose.foundation.Canvas(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+            ) {
+                val w = size.width
+                val h = size.height
+
+                // Draw 3 horizontal grid lines
+                for (i in 0..3) {
+                    val y = h * (i / 3f)
+                    drawLine(
+                        color = gridColor,
+                        start = androidx.compose.ui.geometry.Offset(0f, y),
+                        end = androidx.compose.ui.geometry.Offset(w, y),
+                        strokeWidth = 1f
+                    )
+                }
+
+                val recentProbes = probes.takeLast(30)
+                if (recentProbes.size < 2) return@Canvas
+
+                val maxLatency = (recentProbes.maxOfOrNull { it.totalTimeMs } ?: 80L).coerceAtLeast(60L).toFloat()
+                val stepX = w / (recentProbes.size - 1)
+
+                val path = androidx.compose.ui.graphics.Path()
+                val fillPath = androidx.compose.ui.graphics.Path()
+
+                recentProbes.forEachIndexed { i, p ->
+                    val x = i * stepX
+                    val yFraction = (p.totalTimeMs / maxLatency).coerceIn(0.08f, 0.92f)
+                    val y = h - (h * yFraction)
+
+                    if (i == 0) {
+                        path.moveTo(x, y)
+                        fillPath.moveTo(x, h)
+                        fillPath.lineTo(x, y)
+                    } else {
+                        path.lineTo(x, y)
+                        fillPath.lineTo(x, y)
+                    }
+                }
+
+                fillPath.lineTo((recentProbes.size - 1) * stepX, h)
+                fillPath.close()
+
+                // Gradient fill under waveform
+                drawPath(
+                    path = fillPath,
+                    brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                        colors = listOf(
+                            accentColor.copy(alpha = 0.35f),
+                            Color.Transparent
+                        )
+                    )
+                )
+
+                // Stroke curve
+                drawPath(
+                    path = path,
+                    color = accentColor,
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(
+                        width = 2.5.dp.toPx(),
+                        cap = androidx.compose.ui.graphics.StrokeCap.Round,
+                        join = androidx.compose.ui.graphics.StrokeJoin.Round
+                    )
+                )
+
+                // Current tracking dot
+                val lastProbe = recentProbes.last()
+                val lastX = (recentProbes.size - 1) * stepX
+                val lastY = h - (h * (lastProbe.totalTimeMs / maxLatency).coerceIn(0.08f, 0.92f))
+                drawCircle(
+                    color = if (lastProbe.isSuccess) accentColor else statusRedColor,
+                    radius = 4.dp.toPx(),
+                    center = androidx.compose.ui.geometry.Offset(lastX, lastY)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun PacketMatrixGrid(
+    probes: List<SinglePingProbe>,
+    totalCount: Int = 10,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = SurfaceElevated,
+        border = BorderStroke(1.dp, BorderSubtle),
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "PACKET STREAM MATRIX",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        color = TextSecondary,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp
+                    )
+                )
+                Text(
+                    text = "${probes.size} / $totalCount Packets",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        color = AccentCyan,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 10.sp
+                    )
+                )
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                for (seq in 1..totalCount) {
+                    val probe = probes.find { it.sequence == seq }
+                    val color = when {
+                        probe == null -> BorderSubtle.copy(alpha = 0.35f)
+                        !probe.isSuccess -> StatusRed
+                        probe.totalTimeMs < 45 -> StatusGreen
+                        probe.totalTimeMs < 90 -> AccentCyan
+                        else -> StatusAmber
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(22.dp)
+                            .background(color, RoundedCornerShape(4.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (probe != null) {
+                            Text(
+                                text = "$seq",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontSize = 9.sp,
+                                    color = Color.Black,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }

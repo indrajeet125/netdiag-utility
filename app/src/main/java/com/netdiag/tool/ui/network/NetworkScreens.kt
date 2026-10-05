@@ -35,10 +35,10 @@ import com.netdiag.tool.ui.theme.*
 
 enum class MetricQuality(val label: String, val color: Color, val bgColor: Color) {
     EXCELLENT("Excellent", StatusGreen, StatusGreenBg),
-    GOOD("Good", AccentCyan, AccentCyanBg),
+    GOOD("Good", AccentCyanDark, AccentCyanBgDark),
     FAIR("Fair", StatusAmber, StatusAmberBg),
     POOR("Poor", StatusRed, StatusRedBg),
-    NA("N/A", TextSecondary, Color.Transparent)
+    NA("N/A", TextSecondaryDark, Color.Transparent)
 }
 
 fun classifyRsrp(rsrp: Int?): MetricQuality {
@@ -67,6 +67,26 @@ fun classifySinr(sinr: Double?): MetricQuality {
         sinr >= 20.0 -> MetricQuality.EXCELLENT
         sinr >= 13.0 -> MetricQuality.GOOD
         sinr >= 0.0 -> MetricQuality.FAIR
+        else -> MetricQuality.POOR
+    }
+}
+
+fun classifyRscp(rscp: Int?): MetricQuality {
+    return when {
+        rscp == null || rscp == Int.MAX_VALUE || rscp == 0 || rscp <= -140 -> MetricQuality.NA
+        rscp >= -75 -> MetricQuality.EXCELLENT
+        rscp >= -85 -> MetricQuality.GOOD
+        rscp >= -100 -> MetricQuality.FAIR
+        else -> MetricQuality.POOR
+    }
+}
+
+fun classifyRssi(rssi: Int?): MetricQuality {
+    return when {
+        rssi == null || rssi == Int.MAX_VALUE || rssi == 0 || rssi <= -140 -> MetricQuality.NA
+        rssi >= -65 -> MetricQuality.EXCELLENT
+        rssi >= -75 -> MetricQuality.GOOD
+        rssi >= -85 -> MetricQuality.FAIR
         else -> MetricQuality.POOR
     }
 }
@@ -505,7 +525,12 @@ fun CarrierSummaryBanner(sub: SimSubscription, activeRat: RadioAccessTechnology)
 
 @Composable
 fun SignalSummaryCard(servingCell: CellData?, overallDbm: Int?) {
-    // Determine live metrics (checking NR SS values or LTE values)
+    val rat = servingCell?.rat ?: RadioAccessTechnology.UNKNOWN
+    val is2G = rat == RadioAccessTechnology.EDGE || rat == RadioAccessTechnology.GPRS
+    val is3G = rat == RadioAccessTechnology.UMTS || rat == RadioAccessTechnology.HSPA || rat == RadioAccessTechnology.HSPAP
+    val is5G = rat == RadioAccessTechnology.NR_SA || rat == RadioAccessTechnology.NR_NSA
+
+    // 4G & General Fallback Values
     val rsrp = servingCell?.ssRsrp ?: servingCell?.rsrp ?: overallDbm
     val rsrq = servingCell?.ssRsrq ?: servingCell?.rsrq
     val sinr = servingCell?.ssSinr ?: servingCell?.sinr
@@ -515,7 +540,126 @@ fun SignalSummaryCard(servingCell: CellData?, overallDbm: Int?) {
     val rsrqQuality = classifyRsrq(rsrq)
     val sinrQuality = classifySinr(sinr)
 
+    val cell1Label: String
+    val cell1Val: String
+    val cell1Quality: MetricQuality
+
+    val cell2Label: String
+    val cell2Val: String
+    val cell2Quality: MetricQuality
+
+    val cell3Label: String
+    val cell3Val: String
+    val cell3Quality: MetricQuality
+
+    val cell4Label: String
+    val cell4Val: String
+    val cell4Quality: MetricQuality
+
+    val primaryQuality: MetricQuality
+
+    when {
+        is2G -> {
+            val rssiVal = servingCell?.rssi ?: overallDbm
+            val q = classifyRssi(rssiVal)
+            cell1Label = "RSSI"
+            cell1Val = rssiVal?.let { "$it dBm" } ?: "N/A"
+            cell1Quality = q
+
+            cell2Label = "BER"
+            cell2Val = servingCell?.ber?.let { "$it" } ?: "N/A"
+            cell2Quality = MetricQuality.NA
+
+            cell3Label = "TA"
+            cell3Val = servingCell?.timingAdvance?.let { "$it" } ?: "N/A"
+            cell3Quality = MetricQuality.NA
+
+            cell4Label = "BSIC"
+            cell4Val = servingCell?.bsic?.let { "$it" } ?: "N/A"
+            cell4Quality = MetricQuality.NA
+
+            primaryQuality = q
+        }
+        is3G -> {
+            val rscpVal = servingCell?.rscp ?: servingCell?.rssi ?: overallDbm
+            val q = classifyRscp(rscpVal)
+            cell1Label = "RSCP"
+            cell1Val = rscpVal?.let { "$it dBm" } ?: "N/A"
+            cell1Quality = q
+
+            cell2Label = "Ec/No"
+            cell2Val = servingCell?.ecNo?.let { "${String.format("%.1f", it)} dB" } ?: "N/A"
+            cell2Quality = MetricQuality.NA
+
+            cell3Label = "RSSI"
+            cell3Val = servingCell?.rssi?.let { "$it dBm" } ?: "N/A"
+            cell3Quality = classifyRssi(servingCell?.rssi)
+
+            cell4Label = "PSC"
+            cell4Val = servingCell?.pci?.let { "$it" } ?: "N/A"
+            cell4Quality = MetricQuality.NA
+
+            primaryQuality = q
+        }
+        is5G -> {
+            val ssRsrpVal = servingCell?.ssRsrp ?: servingCell?.rsrp ?: overallDbm
+            val ssRsrqVal = servingCell?.ssRsrq ?: servingCell?.rsrq
+            val ssSinrVal = servingCell?.ssSinr ?: servingCell?.sinr
+            val q = classifyRsrp(ssRsrpVal)
+
+            cell1Label = "SS-RSRP"
+            cell1Val = ssRsrpVal?.let { "$it dBm" } ?: "N/A"
+            cell1Quality = q
+
+            cell2Label = "SS-RSRQ"
+            cell2Val = ssRsrqVal?.let { "$it dB" } ?: "N/A"
+            cell2Quality = classifyRsrq(ssRsrqVal)
+
+            cell3Label = "CSI-RSRP"
+            cell3Val = servingCell?.csiRsrp?.let { "$it dBm" } ?: (rssi?.let { "$it dBm" } ?: "N/A")
+            cell3Quality = MetricQuality.NA
+
+            cell4Label = "SS-SINR"
+            cell4Val = ssSinrVal?.let { "${String.format("%.1f", it)} dB" } ?: "N/A"
+            cell4Quality = classifySinr(ssSinrVal)
+
+            primaryQuality = q
+        }
+        else -> {
+            // 4G LTE default
+            cell1Label = "RSRP"
+            cell1Val = rsrp?.let { "$it dBm" } ?: "N/A"
+            cell1Quality = rsrpQuality
+
+            cell2Label = "RSRQ"
+            cell2Val = rsrq?.let { "$it dB" } ?: "N/A"
+            cell2Quality = rsrqQuality
+
+            cell3Label = "RSSI"
+            cell3Val = rssi?.let { "$it dBm" } ?: "N/A"
+            cell3Quality = MetricQuality.NA
+
+            cell4Label = "SINR"
+            cell4Val = sinr?.let { "${String.format("%.1f", it)} dB" } ?: "N/A"
+            cell4Quality = sinrQuality
+
+            primaryQuality = rsrpQuality
+        }
+    }
+
     val signalLevel = servingCell?.signalLevel ?: 0
+
+    // Timing Advance & Tower Distance Calculation
+    val ta = servingCell?.timingAdvance
+    val towerDistanceText = if (ta != null && ta >= 0) {
+        val metersPerTa = if (is2G) 554.0 else 78.12
+        val meters = (ta * metersPerTa).toInt()
+        if (meters >= 1000) {
+            String.format("%.2f km (TA: %d)", meters / 1000.0, ta)
+        } else {
+            "$meters m (TA: $ta)"
+        }
+    } else null
 
     Surface(
         shape = RoundedCornerShape(10.dp),
@@ -532,7 +676,7 @@ fun SignalSummaryCard(servingCell: CellData?, overallDbm: Int?) {
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = "SIGNAL METRICS",
+                        text = "SIGNAL METRICS (${rat.label})",
                         style = MaterialTheme.typography.titleSmall.copy(
                             color = TextSecondary,
                             fontWeight = FontWeight.Bold,
@@ -547,9 +691,9 @@ fun SignalSummaryCard(servingCell: CellData?, overallDbm: Int?) {
                     SignalBars(level = signalLevel, maxBars = 4)
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Level $signalLevel/4 • ${rsrpQuality.label}",
+                        text = "Level $signalLevel/4 • ${primaryQuality.label}",
                         style = MaterialTheme.typography.bodySmall.copy(
-                            color = rsrpQuality.color,
+                            color = primaryQuality.color,
                             fontWeight = FontWeight.Bold,
                             fontSize = 11.sp
                         )
@@ -559,7 +703,7 @@ fun SignalSummaryCard(servingCell: CellData?, overallDbm: Int?) {
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // 2x2 High Information Density Grid
+            // 2x2 High Information Density Grid (RAT Adaptive)
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -568,16 +712,16 @@ fun SignalSummaryCard(servingCell: CellData?, overallDbm: Int?) {
             ) {
                 Row(modifier = Modifier.fillMaxWidth()) {
                     MetricCell(
-                        label = "RSRP",
-                        value = rsrp?.let { "$it dBm" } ?: "N/A",
-                        quality = rsrpQuality,
+                        label = cell1Label,
+                        value = cell1Val,
+                        quality = cell1Quality,
                         modifier = Modifier.weight(1f)
                     )
                     Box(modifier = Modifier.width(1.dp).height(54.dp).background(BorderSubtle))
                     MetricCell(
-                        label = "RSRQ",
-                        value = rsrq?.let { "$it dB" } ?: "N/A",
-                        quality = rsrqQuality,
+                        label = cell2Label,
+                        value = cell2Val,
+                        quality = cell2Quality,
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -586,18 +730,57 @@ fun SignalSummaryCard(servingCell: CellData?, overallDbm: Int?) {
 
                 Row(modifier = Modifier.fillMaxWidth()) {
                     MetricCell(
-                        label = "RSSI",
-                        value = rssi?.let { "$it dBm" } ?: "N/A",
-                        quality = MetricQuality.NA,
+                        label = cell3Label,
+                        value = cell3Val,
+                        quality = cell3Quality,
                         modifier = Modifier.weight(1f)
                     )
                     Box(modifier = Modifier.width(1.dp).height(54.dp).background(BorderSubtle))
                     MetricCell(
-                        label = "SINR",
-                        value = sinr?.let { "${String.format("%.1f", it)} dB" } ?: "N/A",
-                        quality = sinrQuality,
+                        label = cell4Label,
+                        value = cell4Val,
+                        quality = cell4Quality,
                         modifier = Modifier.weight(1f)
                     )
+                }
+            }
+
+            // Tower Distance Badge
+            if (towerDistanceText != null) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = AccentCyanBg,
+                    border = BorderStroke(1.dp, AccentCyanBorder),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.CellTower,
+                            contentDescription = null,
+                            tint = AccentCyan,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Serving Tower Distance: ",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                color = TextSecondary,
+                                fontWeight = FontWeight.Medium
+                            )
+                        )
+                        Text(
+                            text = towerDistanceText,
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                color = AccentCyan,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        )
+                    }
                 }
             }
         }
@@ -733,48 +916,63 @@ fun ServingCellSection(
                     style = MaterialTheme.typography.bodySmall.copy(color = TextSecondary)
                 )
             } else {
-                // Technical Grid of Serving Identifiers
-                TechnicalRow(label = "Physical Cell ID (PCI)", value = serving.pci?.toString() ?: "N/A")
-                TechnicalRow(label = "Tracking Area Code (TAC)", value = serving.tac?.toString() ?: "N/A")
+                val rat = serving.rat
+                val is2G = rat == RadioAccessTechnology.EDGE || rat == RadioAccessTechnology.GPRS
+                val is3G = rat == RadioAccessTechnology.UMTS || rat == RadioAccessTechnology.HSPA || rat == RadioAccessTechnology.HSPAP
+                val isNr = rat == RadioAccessTechnology.NR_SA || rat == RadioAccessTechnology.NR_NSA
 
-                val isNr = serving.rat == RadioAccessTechnology.NR_SA || serving.rat == RadioAccessTechnology.NR_NSA
-                if (isNr) {
-                    TechnicalRow(label = "NR Cell ID (NCI)", value = serving.cellId?.toString() ?: "N/A")
-                    serving.enbId?.let { TechnicalRow(label = "gNodeB ID", value = "$it (Sector ${serving.sectorId ?: 0})") }
-                    TechnicalRow(label = "NR-ARFCN", value = serving.arfcn?.toString() ?: "N/A")
-                } else {
-                    TechnicalRow(label = "Cell ID (ECI)", value = serving.cellId?.toString() ?: "N/A")
-                    serving.enbId?.let { TechnicalRow(label = "eNodeB ID", value = "$it (Sector ${serving.sectorId ?: 0})") }
-                    TechnicalRow(label = "EARFCN", value = serving.arfcn?.toString() ?: "N/A")
-                }
-
-                serving.bandwidthKhz?.let {
-                    TechnicalRow(label = "Channel Bandwidth", value = "${it / 1000} MHz (${it} kHz)")
-                }
-
-                serving.timingAdvance?.let {
-                    val approxMeters = it * 78 // approx 78 meters per TA unit for LTE
-                    TechnicalRow(label = "Timing Advance (TA)", value = "$it (~${approxMeters}m)")
-                }
-
-                serving.cqi?.let {
-                    TechnicalRow(label = "Channel Quality (CQI)", value = "$it")
-                }
-
-                // 5G CSI metrics if NR
-                if (isNr) {
-                    TechnicalRow(
-                        label = "CSI-RSRP",
-                        value = serving.csiRsrp?.let { "$it dBm" } ?: "N/A"
-                    )
-                    TechnicalRow(
-                        label = "CSI-RSRQ",
-                        value = serving.csiRsrq?.let { "$it dB" } ?: "N/A"
-                    )
-                    TechnicalRow(
-                        label = "CSI-SINR",
-                        value = serving.csiSinr?.let { "${String.format("%.1f", it)} dB" } ?: "N/A"
-                    )
+                when {
+                    is2G -> {
+                        serving.lac?.let { TechnicalRow(label = "Location Area Code (LAC)", value = "$it") }
+                        serving.cellId?.let { TechnicalRow(label = "Cell ID (CID)", value = "$it") }
+                        serving.arfcn?.let { TechnicalRow(label = "ARFCN (BCCH Channel)", value = "$it") }
+                        serving.bsic?.let { TechnicalRow(label = "Base Station ID (BSIC)", value = "$it") }
+                        serving.timingAdvance?.let {
+                            TechnicalRow(label = "Timing Advance (TA)", value = "$it (~${it * 554}m)")
+                        }
+                        serving.ber?.let { TechnicalRow(label = "Bit Error Rate (BER)", value = "$it") }
+                    }
+                    is3G -> {
+                        serving.lac?.let { TechnicalRow(label = "Location Area Code (LAC)", value = "$it") }
+                        serving.cellId?.let { TechnicalRow(label = "Cell ID (CID / UCID)", value = "$it") }
+                        serving.pci?.let { TechnicalRow(label = "Primary Scrambling Code (PSC)", value = "$it") }
+                        serving.arfcn?.let { TechnicalRow(label = "UARFCN", value = "$it") }
+                        serving.rscp?.let { TechnicalRow(label = "RSCP", value = "$it dBm") }
+                        serving.ecNo?.let { TechnicalRow(label = "Ec/No", value = "${String.format("%.1f", it)} dB") }
+                    }
+                    isNr -> {
+                        serving.pci?.let { TechnicalRow(label = "Physical Cell ID (PCI)", value = "$it") }
+                        serving.tac?.let { TechnicalRow(label = "Tracking Area Code (TAC)", value = "$it") }
+                        serving.cellId?.let { TechnicalRow(label = "NR Cell ID (NCI)", value = "$it") }
+                        serving.enbId?.let { TechnicalRow(label = "gNodeB ID", value = "$it (Sector ${serving.sectorId ?: 0})") }
+                        serving.arfcn?.let { TechnicalRow(label = "NR-ARFCN", value = "$it") }
+                        serving.bandwidthKhz?.let {
+                            TechnicalRow(label = "Channel Bandwidth", value = "${it / 1000} MHz (${it} kHz)")
+                        }
+                        serving.timingAdvance?.let {
+                            val approxMeters = (it * 78.12).toInt()
+                            TechnicalRow(label = "Timing Advance (TA)", value = "$it (~${approxMeters}m)")
+                        }
+                        serving.csiRsrp?.let { TechnicalRow(label = "CSI-RSRP", value = "$it dBm") }
+                        serving.csiRsrq?.let { TechnicalRow(label = "CSI-RSRQ", value = "$it dB") }
+                        serving.csiSinr?.let { TechnicalRow(label = "CSI-SINR", value = "${String.format("%.1f", it)} dB") }
+                    }
+                    else -> {
+                        // 4G LTE
+                        serving.pci?.let { TechnicalRow(label = "Physical Cell ID (PCI)", value = "$it") }
+                        serving.tac?.let { TechnicalRow(label = "Tracking Area Code (TAC)", value = "$it") }
+                        serving.cellId?.let { TechnicalRow(label = "Cell ID (ECI)", value = "$it") }
+                        serving.enbId?.let { TechnicalRow(label = "eNodeB ID", value = "$it (Sector ${serving.sectorId ?: 0})") }
+                        serving.arfcn?.let { TechnicalRow(label = "EARFCN", value = "$it") }
+                        serving.bandwidthKhz?.let {
+                            TechnicalRow(label = "Channel Bandwidth", value = "${it / 1000} MHz (${it} kHz)")
+                        }
+                        serving.timingAdvance?.let {
+                            val approxMeters = (it * 78.12).toInt()
+                            TechnicalRow(label = "Timing Advance (TA)", value = "$it (~${approxMeters}m)")
+                        }
+                        serving.cqi?.let { TechnicalRow(label = "Channel Quality (CQI)", value = "$it") }
+                    }
                 }
             }
 

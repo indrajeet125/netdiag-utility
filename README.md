@@ -7,7 +7,7 @@
 [![DI](https://img.shields.io/badge/DI-Hilt%20Dagger-orange.svg)](https://dagger.dev/hilt/)
 [![Privacy](https://img.shields.io/badge/Privacy-100%25%20On--Device%20%7C%20Zero%20Tracking-success.svg)](#-data-privacy--security-architecture)
 
-**NetDiag Utility** is a carrier-grade network diagnostics and device utility suite built with modern Android architecture and Jetpack Compose (Material 3). It unites high-density baseband telemetry (comparable to NetMonster), multi-stage latency diagnostics, radio mode policy management, a floating OneTap accessibility assistant, and an honest, byte-accurate application cache-cleaning engine.
+**NetDiag Utility** is a carrier-grade network diagnostics and device utility suite built with modern Android architecture and Jetpack Compose (Material 3). It unites high-density baseband telemetry (carrier-grade baseband decoding), multi-stage latency diagnostics, radio mode policy management, a floating OneTap accessibility assistant, and an honest, byte-accurate application cache-cleaning engine.
 
 ---
 
@@ -51,7 +51,7 @@ As a software development engineer (SDE) architecting this system, the codebase 
 - **Robust Code Hygiene & DRY Principles**: Reusable components are centralized in `CommonComponents.kt`; redundant prototype files are purged; hardcoded OEM brand models are replaced with dynamic system queries.
 
 ### 3. 🖥️ Clear UI & Visual Ergonomics (Reduced Cognitive Load)
-- **High Information Density Without Visual Fatigue**: Inspired by professional RF tools like NetMonster, telemetry is laid out in a calibrated 2×2 grid (`RSRP`, `RSRQ`, `RSSI`, `SINR`) that can be scanned in milliseconds.
+- **High Information Density Without Visual Fatigue**: Engineered according to professional RF engineering principles, telemetry is laid out in a calibrated 2×2 grid (`RSRP`, `RSRQ`, `RSSI`, `SINR`) that can be scanned in milliseconds.
 - **Calibrated 3GPP Semantic Color Hierarchy**: Diagnostic health is color-coded using established 3GPP thresholds:
   - `StatusGreen` (`#00E676`): Excellent radio reception / successful probe
   - `AccentCyan` (`#00E5FF`): Good reception / primary action highlight
@@ -97,48 +97,88 @@ As a software development engineer (SDE) architecting this system, the codebase 
 
 ---
 
-## 🌟 Key Capabilities
+## 🌟 Key Capabilities & Newly Added Features
 
-### 1. 📶 NetMonster-Grade Cellular Diagnostics
-- **Immediate 2×2 Signal Grid**: `RSRP`, `RSRQ`, `RSSI`, and `SINR` are displayed front-and-center without hidden sub-menus or extra taps.
+### 1. 📶 Carrier-Grade Cellular Diagnostics (2G, 3G, 4G, 5G Adaptive)
+- **Dynamic RAT Telemetry Adaptation**: Automatically alters the primary RF metric grid and technical identifiers according to the active generation:
+  - **2G (GSM / EDGE)**: `RSSI (dBm)`, `BER (Bit Error Rate)`, `Timing Advance`, and `BSIC (Base Station Identity Code)`.
+  - **3G (UMTS / WCDMA / HSPA+)**: `RSCP (dBm)`, `Ec/No (dB)`, `RSSI (dBm)`, and `PSC (Primary Scrambling Code)`.
+  - **4G (LTE / LTE-A)**: `RSRP (dBm)`, `RSRQ (dB)`, `RSSI (dBm)`, and `SINR (dB)`.
+  - **5G (NR SA / NR NSA)**: `SS-RSRP (dBm)`, `SS-RSRQ (dB)`, `CSI-RSRP (dBm)`, and `SS-SINR (dB)`.
+- **Serving Tower Distance Telemetry**:
+  - Live calculation using baseband Timing Advance (TA) steps: $TA \times 78.12\text{ m}$ for LTE, $TA \times 554\text{ m}$ for GSM. Prominently badged on the cellular dashboard.
 - **3GPP Calibrated Quality**: Real-time signal level bars (0–4) paired with standardized 3GPP signal quality classifications (`Excellent`, `Good`, `Fair`, `Poor`, or `N/A`).
 - **Dual SIM Binding**: Seamlessly toggle between `[ SIM 1 ]` and `[ SIM 2 ]` subscriptions with individual carrier identities and active mobile data markers.
 - **Serving Cell & Secondary Carrier**:
   - Automatically decodes EARFCN / NR-ARFCN into 3GPP frequency bands (e.g., `B3 (1800 MHz)`, `B40 (2300 MHz)`, `n78 (3500 MHz)`).
   - Physical Cell ID (PCI), Tracking Area Code (TAC), Cell Identity (ECI / NCI).
   - Derived **eNodeB ID / gNodeB ID** and Sector IDs (`ci shr 8` for LTE, `nci shr 14` for NR).
-  - Channel Bandwidth (MHz/kHz), Timing Advance (with approximate distance in meters), and CQI.
+  - Channel Bandwidth (MHz/kHz), Timing Advance, and CQI.
   - Secondary carrier telemetry for **5G NSA** (`NR + LTE Anchor`).
-- **Network Identifiers**: Real-time inspection of `MCC`, `MNC`, `PLMN Numeric` (e.g., `405861`), Country ISO, and Roaming state.
-- **IMS & Advanced Voice**: Real hardware indicators for **IMS Registration**, **VoLTE**, **VoWiFi / IWLAN**, and **Video Calling (ViLTE)**.
 - **Neighbour Cells**: Compact list sorted by **Signal**, **Technology**, **PCI**, or **Frequency**.
 - **Configurable Live Polling**: Live update ticker supporting `Auto (2s)`, `1 sec`, `2 sec`, `5 sec`, and `Manual` refresh modes.
-- **Technical Framework Drawer**: Deep-dive framework inspector for raw CellInfo objects, timestamps (ns), and measurement ages.
 
-### 2. ⚡ Multi-Protocol Ping & Latency Diagnostics
-- **HTTP / Application Ping**: Measures full connection lifecycle including DNS resolution, TCP handshake, TLS negotiation, Time-To-First-Byte (TTFB), and response transfer time.
-- **TCP Socket Ping**: Raw socket connection latency against any destination host and port.
-- **ICMP Ping**: Supported low-level echo checks where permitted by the platform.
-- **Diagnostics History & Statistics**: Tracks packet loss percentage, min/avg/max latency, and historical session logs.
+### 2. 🚀 High-Speed Throughput & Speed Test Engine
+- **Multi-Phase Telemetry Engine**: Powered by Cloudflare Edge CDN multi-threaded HTTP/2:
+  - Phase 1: Real-time Ping and Jitter calculation.
+  - Phase 2: 25 MB Multi-chunk streaming downlink throughput test.
+  - Phase 3: Chunked POST uplink throughput test.
+- **Modern Circular Speedometer Gauge**:
+  - 270-degree sweeping arc with animated needle and live digital HUD readout (`%.1f Mbps`).
+  - Active gradient fill matching throughput speed tier.
+- **Live Throughput Waveform Canvas Graph**:
+  - Real-time cubic bezier curve plotting speed history with neon gradient fill underneath.
+- **Result Metrics**: Latency (ms), Jitter (ms), Download Average & Peak, Upload Average & Peak, Connection Grade.
 
-### 3. 🧹 Real Application Cache Cleaner
+### 3. 🌐 Interactive Network Topology Flow Diagram & Battery Saver
+- **4-Node End-to-End Route Visualization**:
+  - `[ Device Local IP ] ──> [ Gateway IP ] ──> [ ISP / WAN Operator ] ──> [ Global DNS / Internet ]`
+- **Live Gateway Latency Probing**: Lightweight background gateway echo testing.
+- **Dedicated Battery Saver Toggle (`[ ⏸ Stop ]` / `[ ▶ Start Live ]`)**:
+  - Freezes all periodic polling and Canvas animations on demand to achieve zero CPU usage and conserve device battery.
+
+### 4. ⚡ Ping Diagnostics with Oscilloscope Waveform & Packet Matrix
+- **Oscilloscope Waveform Graph**: Live Canvas-based bezier spline curve with primary gradient fill tracing latency over time.
+- **Packet Stream Matrix Grid**: 10-packet color-coded telemetry blocks (`Green` <45ms, `Cyan` <90ms, `Amber` high latency, `Red` packet drop).
+- **High-Tech Diagnostic Progress Bar**:
+  - Displays `"RUNNING IN 10 PROBES • STATUS: 20%"` with glowing animated neon lead-dot progress bar.
+  - Technical waterfall breakdown: DNS resolution, TCP handshake, TLS negotiation, and TTFB.
+
+### 5. 📱 Device & Hardware Telemetry Screen (`DeviceInfoScreen.kt`)
+- **System Memory (RAM) Diagnostics**: Total RAM, Available/Free RAM, Used RAM, percentage progress bar, low-memory threshold warnings.
+- **Internal Storage Diagnostics**: Exact byte-accurate storage calculation using `StatFs` (Total, Free, Used space in GB).
+- **Operating System & Platform**: Android Version, API Level, Security Patch level, Build number, Kernel version, Baseband radio.
+- **Processor & Display**: CPU core count, Architecture ABIs (`arm64-v8a`), Screen Resolution (`W × H px`), Screen density (`DPI`).
+- **Battery Telemetry**: Live Battery %, Status (Charging/Discharging), Health, Temperature (°C), Voltage (mV), Technology (`Li-ion`).
+
+### 6. 🔐 SIM Security & Identity Screen (`SimIdentityScreen.kt`)
+- **Sensitive Identifier Privacy Protection**:
+  - **IMSI (International Mobile Subscriber Identity)**: Masked by default (e.g. `40445 •••••••• 89`). **Eye toggle button `[ 👁 ]`** unmasks full 15-digit IMSI with 1-tap copy button `[ 📋 ]`.
+  - **MSISDN (Mobile Phone Number)**: Masked by default (e.g. `+91 ••••• ••421`), Eye button to reveal and copy.
+  - **ICCID (SIM Chip Serial)**: Masked by default (e.g. `89918 •••••••••••••• 04`), Eye button to reveal and copy.
+- **Network Identifiers**: MCC, MNC, PLMN (`404045`), Country ISO, Subscription ID, physical SIM vs eSIM (eUICC) indicator.
+- **Privacy Shield Notice**: Reassures user that credentials are never transmitted off the device.
+
+### 7. 🔍 Universal Diagnostic Search & Favorite Service Runner
+- **Command Search Bar**: Real-time filtering across all diagnostic tools, tests, and services.
+- **Favorites / Pinned Services Row**: Star (`[ ★ / ☆ ]`) any diagnostic test to pin it directly to the Home Dashboard for instant access.
+- **Direct 1-Tap Runner**: Dedicated `[ ▶ RUN ]` button next to every search result to immediately launch that diagnostic.
+
+### 8. ⇅ Reorderable Drag-and-Drop Category Prioritization
+- **Customizable Dashboard Layout**: Reorder sections according to personal preference:
+  - Network Topology Flow, Cellular & Wi-Fi Status, Health Diagnostics, Quick Tools, Device Snapshot.
+- **Tactile Drag & Drop**: Touch drag handles or use single-tap `[▲ Up]` and `[▼ Down]` priority arrow buttons.
+- **Persistent Preferences**: Preferences are saved locally and reloaded across app launches.
+
+### 9. 🧹 Real Application Cache Cleaner
 - **Zero Fake Numbers**: Inspects exact application cache and data allocations using Android's `StorageStatsManager` and `PACKAGE_USAGE_STATS`.
 - **Safe & Non-Destructive**: Never deletes user documents, photos, or media, and strictly isolates volatile cache from persistent application data.
 - **Storage Overview**: Visual device storage breakdown (`Used` vs `Free` vs `Removable Cache`).
 - **Granular Sorting & Filtering**: Sort apps by Cache Size, App Name, or Total Size. Filter by `All`, `Large cache (>10 MB)`, `Selected`, or `Ignored`.
-- **App Storage Details**: Deep inspection per app with dedicated actions for cache cleaning and exclusion management.
-- **Batch & Selected Cleaning**: Confirmation dialogs, real-time progress indicators, and comprehensive cleanup result summaries.
-- **Honest Capability Detection**: Distinguishes between automated clearing via Accessibility, system-restricted boundaries, and settings fallback.
 
-### 4. 🎛️ OneTap Floating Utility
-- **Accessibility Integration**: Draggable floating shortcut pill with edge snapping and elevation.
-- **Quick Action Menu**: Instant access to live cellular telemetry, ping latency tests, dual SIM details, system radio settings, and the Cache Cleaner from any application.
-
-### 5. 🎨 Design & Aesthetic System
-- **Engineering Dark Palette**: Deep navy canvas (`#0C1017`), elevated surfaces (`#141A23`, `#1C2430`), and electric teal/cyan primary accents (`#00E5FF`).
-- **Clean Daylight Light Palette**: High-contrast, clean daylight theme for bright outdoor environments.
-- **Dynamic Color Support**: Adapts to Android 12+ wallpaper-extracted Material You palettes.
-- **Custom AI Brand Identity**: Custom vector radio cell tower logo with pulse waves on deep navy.
+### 10. 🎨 Calibrated Material 3 Design & Theme Engine
+- **Dark Mode & System Default Fix**: Dynamically maps semantic tokens to `MaterialTheme.colorScheme`, ensuring seamless switching between Light, Dark, and System Default themes.
+- **Engineering Navy / Cyan Aesthetics**: Tailored contrast ratios meeting WCAG AAA accessibility standards.
 
 ---
 
@@ -321,6 +361,31 @@ app/src/main/
     └── xml/
         └── accessibility_service_config.xml
 ```
+
+---
+
+## 🚀 What's New in v1.1.0 (Architecture & Features)
+
+### 1. SOLID Architecture & GoF Design Patterns
+- **Strategy Pattern (`domain/strategy/DiagnosticStrategy.kt`)**: Decouples network diagnostic test execution (HTTP, TCP socket, ICMP echo) into interchangeable algorithm strategies.
+- **Factory Pattern (`domain/strategy/PingStrategies.kt`)**: Dynamic `PingStrategyFactory` providing strategy instances to ViewModels without tight coupling.
+- **Registry Pattern (`domain/registry/AppServiceRegistry.kt`)**: Extensible registry supporting runtime registration, category filtering, and search indexing for all network and device diagnostic services.
+- **Type-Safe Route Pattern (`domain/model/AppRoute.kt`)**: Eliminates string literals across navigation graphs, bottom bars, drawer items, and the floating OneTap assistant.
+
+### 2. Live Diagnostic Progress Bar (`DiagnosticProgressBar.kt`)
+- Visual live telemetry displaying step progress (`"RUNNING IN 10 PROBES"`), badge status (`"STATUS: 20%"`), glowing gradient bar with pulsing tracking dot, and probe RTT readout.
+
+### 3. Reorderable Category Prioritization (`PrioritizeCategoriesSheet.kt`)
+- Direct drag-and-drop category prioritization with gesture detection (`detectDragGestures`) and single-tap `[▲ Up]` / `[▼ Down]` buttons. Persisted in `AppPreferencesRepository`.
+
+### 4. Universal Diagnostic Search & Favorite Service Runner (`ServiceSearchRunnerSheet.kt`)
+- Integrated search bar across all diagnostic suites, with a Star (`[ ★ ]`) favorite pinning row on the dashboard and instant `[ ▶ RUN ]` triggers.
+
+### 5. Device Info Screen (`DeviceInfoScreen.kt`)
+- Live RAM telemetry bar (`X.XX GB / Y.YY GB`), internal storage diagnostics via `StatFs`, CPU architecture/core count, Android OS specs, and battery health telemetry.
+
+### 6. SIM Security & Privacy Screen (`SimIdentityScreen.kt`)
+- Protects IMSI, MSISDN phone number, and ICCID behind shoulder-surfing privacy masks with interactive `[ 👁 ]` Eye unmask toggles and 1-tap clipboard copy buttons `[ 📋 ]`.
 
 ---
 
