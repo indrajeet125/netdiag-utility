@@ -299,7 +299,246 @@ class OneTapAccessibilityService : AccessibilityService() {
         }
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) { }
+    companion object {
+        var isAutoClearActive = true
+
+        // State fencing
+        @Volatile
+        var targetCleaningPackage: String? = null
+
+        @Volatile
+        var currentStep: A11yCleanStep = A11yCleanStep.IDLE
+
+        @Volatile
+        var isActionInProgress: Boolean = false
+
+        fun resetAutomationState() {
+            targetCleaningPackage = null
+            currentStep = A11yCleanStep.IDLE
+            isActionInProgress = false
+        }
+
+        fun beginCleaning(packageName: String) {
+            targetCleaningPackage = packageName
+            currentStep = A11yCleanStep.WAITING_FOR_APP_INFO
+            isActionInProgress = false
+            android.util.Log.d("CACHE", "[CACHE][A11Y] package=$packageName state=WAITING_FOR_APP_INFO action=AUTOMATION_INIT")
+        }
+    }
+
+    enum class A11yCleanStep {
+        IDLE,
+        WAITING_FOR_APP_INFO,
+        WAITING_FOR_STORAGE,
+        STORAGE_CLICKED,
+        WAITING_FOR_CLEAR_CACHE,
+        CLEAR_CACHE_CLICKED,
+        WAIT_AFTER_CLEAR,
+        RETURNING_TO_APP
+    }
+
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var retryRunnable: Runnable? = null
+    private var retryCount = 0
+    private val MAX_RETRIES = 12 // ~12 * 400ms = 4.8s timeout
+
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        if (!isAutoClearActive || event == null) return
+        val targetPkg = targetCleaningPackage ?: return
+
+        // State fencing: only react when relevant Settings or package window is active
+        val eventPkg = event.packageName?.toString() ?: ""
+        val isSettingsWindow = eventPkg.contains("settings", ignoreCase = true) || eventPkg.contains("packageinstaller", ignoreCase = true)
+        
+        if (!isSettingsWindow && currentStep != A11yCleanStep.IDLE) {
+            // Not in settings
+            return
+        }
+
+        // Prevent duplicate action dispatch
+        if (isActionInProgress) return
+
+        when (currentStep) {
+            A11yCleanStep.WAITING_FOR_APP_INFO, A11yCleanStep.WAITING_FOR_STORAGE -> {
+                attemptFindAndClickStorage(targetPkg)
+            }
+            A11yCleanStep.WAITING_FOR_CLEAR_CACHE -> {
+                attemptFindAndClickClearCache(targetPkg)
+            }
+            else -> {
+                // Ignore other events while settling or returning
+            }
+        }
+    }
+
+    private fun attemptFindAndClickStorage(targetPkg: String) {
+        if (isActionInProgress) return
+        val rootNode = rootInActiveWindow ?: return
+
+        val storageNode = findNodeByText(rootNode, listOf("Storage & cache", "Storage and cache", "Storage", "Internal shared storage"))
+        if (storageNode != null) {
+            android.util.Log.d("CACHE", "[CACHE][A11Y] package=$targetPkg state=WAITING_FOR_STORAGE nodeFound=true")
+            isActionInProgress = true
+            currentStep = A11yCleanStep.STORAGE_CLICKED
+
+            // Human delay: 800-1100ms before clicking storage
+            mainHandler.postDelayed({
+                val clicked = performNodeClick(storageNode)
+                android.util.Log.d("CACHE", "[CACHE][A11Y] package=$targetPkg action=CLICK_STORAGE success=$clicked")
+                if (clicked) {
+                    currentStep = A11yCleanStep.WAITING_FOR_CLEAR_CACHE
+                    // Delay 1000-1200ms for Storage screen to open and settle
+                    mainHandler.postDelayed({
+                        isActionInProgress = false
+                        scheduleClearCacheRetry(targetPkg)
+                    }, 1100)
+                } else {
+                    isActionInProgress = false
+                    currentStep = A11yCleanStep.WAITING_FOR_STORAGE
+                }
+            }, 850)
+        } else {
+            // UI element not yet rendered: schedule quick retry
+            scheduleStorageRetry(targetPkg)
+        }
+    }
+
+    private fun scheduleStorageRetry(targetPkg: String) {
+        if (retryRunnable != null || isActionInProgress) return
+        if (currentStep != A11yCleanStep.WAITING_FOR_APP_INFO && currentStep != A11yCleanStep.WAITING_FOR_STORAGE) return
+
+        retryCount++
+        if (retryCount > MAX_RETRIES) {
+            android.util.Log.w("CACHE", "[CACHE][A11Y] package=$targetPkg state=WAITING_FOR_STORAGE error=UI_ELEMENT_NOT_FOUND (timeout)")
+            retryCount = 0
+            triggerFallbackReturn(targetPkg)
+            return
+        }
+
+        retryRunnable = Runnable {
+            retryRunnable = null
+            attemptFindAndClickStorage(targetPkg)
+        }
+        mainHandler.postDelayed(retryRunnable!!, 350)
+    }
+
+    private fun attemptFindAndClickClearCache(targetPkg: String) {
+        if (isActionInProgress) return
+        val rootNode = rootInActiveWindow ?: return
+
+        val clearCacheNode = findNodeByText(rootNode, listOf("Clear cache", "Clear Cache"))
+        if (clearCacheNode != null) {
+            val isEnabled = clearCacheNode.isEnabled || clearCacheNode.parent?.isEnabled == true
+            android.util.Log.d("CACHE", "[CACHE][A11Y] package=$targetPkg state=WAITING_FOR_CLEAR_CACHE nodeFound=true enabled=$isEnabled")
+
+            if (!isEnabled) {
+                // Button is disabled, meaning cache is already cleared (0 B)
+                android.util.Log.d("CACHE", "[CACHE][A11Y] package=$targetPkg action=ALREADY_CLEARED_DISABLED")
+                isActionInProgress = true
+                currentStep = A11yCleanStep.WAIT_AFTER_CLEAR
+                mainHandler.postDelayed({
+                    triggerDoubleBackReturn(targetPkg)
+                }, 800)
+                return
+            }
+
+            isActionInProgress = true
+            currentStep = A11yCleanStep.CLEAR_CACHE_CLICKED
+
+            // Human delay: 500-750ms before clicking "Clear cache"
+            mainHandler.postDelayed({
+                val clicked = performNodeClick(clearCacheNode)
+                android.util.Log.d("CACHE", "[CACHE][A11Y] package=$targetPkg action=CLICK_CLEAR_CACHE success=$clicked")
+                currentStep = A11yCleanStep.WAIT_AFTER_CLEAR
+
+                if (clicked) {
+                    Toast.makeText(this, "Cache Cleared ✓", Toast.LENGTH_SHORT).show()
+                }
+
+                // CRITICAL TIMING: Wait 1800-2200ms after clicking clear cache so Android
+                // finishes deletion, updates system stats & flushes UI
+                android.util.Log.d("CACHE", "[CACHE][A11Y] package=$targetPkg action=WAIT_AFTER_CLEAR")
+                mainHandler.postDelayed({
+                    triggerDoubleBackReturn(targetPkg)
+                }, 1900)
+            }, 600)
+        } else {
+            scheduleClearCacheRetry(targetPkg)
+        }
+    }
+
+    private fun scheduleClearCacheRetry(targetPkg: String) {
+        if (retryRunnable != null || isActionInProgress) return
+        if (currentStep != A11yCleanStep.WAITING_FOR_CLEAR_CACHE) return
+
+        retryCount++
+        if (retryCount > MAX_RETRIES) {
+            android.util.Log.w("CACHE", "[CACHE][A11Y] package=$targetPkg state=WAITING_FOR_CLEAR_CACHE error=UI_ELEMENT_NOT_FOUND (timeout)")
+            retryCount = 0
+            triggerFallbackReturn(targetPkg)
+            return
+        }
+
+        retryRunnable = Runnable {
+            retryRunnable = null
+            attemptFindAndClickClearCache(targetPkg)
+        }
+        mainHandler.postDelayed(retryRunnable!!, 400)
+    }
+
+    private fun triggerDoubleBackReturn(targetPkg: String) {
+        currentStep = A11yCleanStep.RETURNING_TO_APP
+        android.util.Log.d("CACHE", "[CACHE][A11Y] package=$targetPkg action=RETURN_TO_APP")
+
+        // First back: from Storage screen to App Info
+        performGlobalAction(GLOBAL_ACTION_BACK)
+
+        // Wait 600ms before second back: from App Info to NetDiag
+        mainHandler.postDelayed({
+            performGlobalAction(GLOBAL_ACTION_BACK)
+            mainHandler.postDelayed({
+                resetAutomationState()
+            }, 500)
+        }, 600)
+    }
+
+    private fun triggerFallbackReturn(targetPkg: String) {
+        currentStep = A11yCleanStep.RETURNING_TO_APP
+        android.util.Log.d("CACHE", "[CACHE][A11Y] package=$targetPkg action=FALLBACK_RETURN")
+        performGlobalAction(GLOBAL_ACTION_BACK)
+        mainHandler.postDelayed({
+            performGlobalAction(GLOBAL_ACTION_BACK)
+            resetAutomationState()
+        }, 500)
+    }
+
+    private fun findNodeByText(root: android.view.accessibility.AccessibilityNodeInfo, keywords: List<String>): android.view.accessibility.AccessibilityNodeInfo? {
+        for (kw in keywords) {
+            val list = root.findAccessibilityNodeInfosByText(kw)
+            for (node in list) {
+                val nodeText = node.text?.toString() ?: ""
+                val contentDesc = node.contentDescription?.toString() ?: ""
+                if (nodeText.contains(kw, ignoreCase = true) || contentDesc.contains(kw, ignoreCase = true)) {
+                    return node
+                }
+            }
+        }
+        return null
+    }
+
+    private fun performNodeClick(node: android.view.accessibility.AccessibilityNodeInfo): Boolean {
+        if (node.isClickable) {
+            return node.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK)
+        }
+        var p = node.parent
+        while (p != null) {
+            if (p.isClickable) {
+                return p.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK)
+            }
+            p = p.parent
+        }
+        return false
+    }
 
     override fun onInterrupt() { }
 
