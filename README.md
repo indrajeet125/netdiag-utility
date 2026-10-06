@@ -170,11 +170,18 @@ As a software development engineer (SDE) architecting this system, the codebase 
 - **Tactile Drag & Drop**: Touch drag handles or use single-tap `[▲ Up]` and `[▼ Down]` priority arrow buttons.
 - **Persistent Preferences**: Preferences are saved locally and reloaded across app launches.
 
-### 9. 🧹 Real Application Cache Cleaner
+### 9. 🧹 Real Application Cache Cleaner & Automated Accessibility Engine
 - **Zero Fake Numbers**: Inspects exact application cache and data allocations using Android's `StorageStatsManager` and `PACKAGE_USAGE_STATS`.
+- **Search & Persistent Multi-Selection**: Filter installed apps by name or package without losing previous selections across searches, complete with visible batch selection controls ("Select Visible", "Clear Selection").
+- **Robust Accessibility Automation Engine (`OneTapAccessibilityService`)**:
+  - Automates the native Android path: `App Info -> Storage & cache -> Clear cache -> Return to NetDiag -> Verify -> Advance`.
+  - **State Fencing**: Protected by state machines (`WAITING_FOR_APP_INFO`, `WAITING_FOR_STORAGE`, `STORAGE_CLICKED`, `WAITING_FOR_CLEAR_CACHE`, `CLEAR_CACHE_CLICKED`, `WAIT_AFTER_CLEAR`, `RETURNING_TO_APP`) to reject spurious accessibility window events.
+  - **UI Element Polling & Retries**: Asynchronously queries UI nodes (`Storage & cache`, `Clear cache`) with a 4.8s safety fallback timeout rather than blindly relying on coordinate clicking.
+  - **Human-Calibrated Delays**: Configured with 850–1100ms settling delays between screens, plus a mandatory **1900ms wait** after clicking "Clear cache" to permit the Android storage daemon to commit disk deletion before returning.
+  - **Sequential Queue Processing**: NetDiag verifies cache size deltas on resume (with asynchronous storage update retries) and enforces a 1200ms settling pause before initiating the next application in the batch queue.
 - **Safe & Non-Destructive**: Never deletes user documents, photos, or media, and strictly isolates volatile cache from persistent application data.
 - **Storage Overview**: Visual device storage breakdown (`Used` vs `Free` vs `Removable Cache`).
-- **Granular Sorting & Filtering**: Sort apps by Cache Size, App Name, or Total Size. Filter by `All`, `Large cache (>10 MB)`, `Selected`, or `Ignored`.
+- **Granular Sorting & Filtering**: Sort apps by Cache Size, App Name, or Total Size. Filter by `All`, `>10 MB`, `>50 MB`, `>100 MB`, `Selected`, or `Ignored`.
 
 ### 10. 🎨 Calibrated Material 3 Design & Theme Engine
 - **Dark Mode & System Default Fix**: Dynamically maps semantic tokens to `MaterialTheme.colorScheme`, ensuring seamless switching between Light, Dark, and System Default themes.
