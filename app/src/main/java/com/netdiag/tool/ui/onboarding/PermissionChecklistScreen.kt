@@ -38,7 +38,8 @@ import com.netdiag.tool.ui.theme.*
 @Composable
 fun PermissionChecklistScreen(
     viewModel: OnboardingViewModel,
-    onContinue: () -> Unit
+    onContinue: () -> Unit,
+    onSkip: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -79,6 +80,17 @@ fun PermissionChecklistScreen(
         topBar = {
             TopAppBar(
                 title = {},
+                actions = {
+                    TextButton(
+                        onClick = onSkip,
+                        colors = ButtonDefaults.textButtonColors(contentColor = TextSecondary)
+                    ) {
+                        Text(
+                            text = "Skip",
+                            style = MaterialTheme.typography.labelLarge
+                        )
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = CanvasNavy)
             )
         },

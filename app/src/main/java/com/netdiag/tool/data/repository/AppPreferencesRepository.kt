@@ -97,7 +97,8 @@ class AppPreferencesRepository @Inject constructor(
     }
 
     fun setOnboardingCompleted(completed: Boolean) {
-        prefs.edit().putBoolean(KEY_ONBOARDING_COMPLETED, completed).apply()
+        android.util.Log.d("Onboarding", "[Onboarding] persisted completed = $completed")
+        prefs.edit().putBoolean(KEY_ONBOARDING_COMPLETED, completed).commit()
         _onboardingCompleted.value = completed
     }
 
