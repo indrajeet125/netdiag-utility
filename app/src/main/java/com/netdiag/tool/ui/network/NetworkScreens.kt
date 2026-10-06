@@ -12,8 +12,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -108,6 +111,30 @@ fun NetworkScreen(
     val lastUpdatedMs by viewModel.lastUpdatedMs.collectAsState()
 
     var showRefreshMenu by remember { mutableStateOf(false) }
+
+    var expandSignal by remember { mutableStateOf(true) }
+    var expandServing by remember { mutableStateOf(true) }
+    var expandIdentifiers by remember { mutableStateOf(false) }
+    var expandIms by remember { mutableStateOf(false) }
+    var expandNeighbors by remember { mutableStateOf(false) }
+    var selectedMetricExplanation by remember { mutableStateOf<MetricExplanation?>(null) }
+
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            when (event) {
+                androidx.lifecycle.Lifecycle.Event.ON_RESUME -> viewModel.startLiveMonitoring()
+                androidx.lifecycle.Lifecycle.Event.ON_PAUSE -> viewModel.stopLiveMonitoring()
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            viewModel.stopLiveMonitoring()
+        }
+    }
 
     val currentSub = if (selectedSlot == 0) sim1 else sim2
     val hasSubscription = currentSub.info.subscriptionId != -1
@@ -227,7 +254,95 @@ fun NetworkScreen(
                     selectedSlot = selectedSlot,
                     onSelectSlot = { viewModel.selectSim(it) }
                 )
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // ── Expand & Shrink Quick Control Bar ──
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "CARDS & TELEMETRY",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            color = TextSecondary,
+                            letterSpacing = 1.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 10.sp
+                        )
+                    )
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = SurfaceHighlight,
+                            border = BorderStroke(1.dp, BorderSubtle),
+                            modifier = Modifier.clickable {
+                                expandSignal = false
+                                expandServing = false
+                                expandIdentifiers = false
+                                expandIms = false
+                                expandNeighbors = false
+                            }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.UnfoldLess,
+                                    contentDescription = null,
+                                    tint = AccentCyan,
+                                    modifier = Modifier.size(12.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "Shrink All",
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        color = AccentCyan,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 10.sp
+                                    )
+                                )
+                            }
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = SurfaceHighlight,
+                            border = BorderStroke(1.dp, BorderSubtle),
+                            modifier = Modifier.clickable {
+                                expandSignal = true
+                                expandServing = true
+                                expandIdentifiers = true
+                                expandIms = true
+                                expandNeighbors = true
+                            }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.UnfoldMore,
+                                    contentDescription = null,
+                                    tint = AccentCyan,
+                                    modifier = Modifier.size(12.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "Expand All",
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        color = AccentCyan,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 10.sp
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(10.dp))
             }
 
             if (!hasSubscription) {
@@ -242,41 +357,67 @@ fun NetworkScreen(
                 // ── 2. TOP CARRIER & REGISTRATION SUMMARY ──
                 item {
                     CarrierSummaryBanner(sub = currentSub, activeRat = activeRat)
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
                 }
 
-                // ── 3. SIGNAL SUMMARY — VERY IMPORTANT (PROMINENT COMPACT 2X2 GRID) ──
+                // ── 3. SIGNAL SUMMARY (COMPACT & EXPANDABLE 2X2 GRID) ──
                 item {
-                    SignalSummaryCard(servingCell = serving, overallDbm = currentSub.signalDbm)
-                    Spacer(modifier = Modifier.height(14.dp))
+                    SignalSummaryCard(
+                        servingCell = serving,
+                        overallDbm = currentSub.signalDbm,
+                        isExpanded = expandSignal,
+                        onToggleExpand = { expandSignal = !expandSignal },
+                        onShowMetricInfo = { selectedMetricExplanation = it }
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
                 }
 
-                // ── 4. SERVING CELL SECTION ──
+                // ── 4. SERVING CELL SECTION (EXPANDABLE) ──
                 item {
-                    ServingCellSection(serving = serving, secondaryServing = secondaryServing, sub = currentSub)
-                    Spacer(modifier = Modifier.height(14.dp))
+                    ServingCellSection(
+                        serving = serving,
+                        secondaryServing = secondaryServing,
+                        sub = currentSub,
+                        isExpanded = expandServing,
+                        onToggleExpand = { expandServing = !expandServing },
+                        onShowMetricInfo = { selectedMetricExplanation = it }
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
                 }
 
-                // ── 5. CURRENT RADIO & NETWORK IDENTIFIERS ──
+                // ── 5. CURRENT RADIO & NETWORK IDENTIFIERS (EXPANDABLE) ──
                 item {
-                    NetworkIdentifiersSection(sub = currentSub, serving = serving)
-                    Spacer(modifier = Modifier.height(14.dp))
+                    NetworkIdentifiersSection(
+                        sub = currentSub,
+                        serving = serving,
+                        isExpanded = expandIdentifiers,
+                        onToggleExpand = { expandIdentifiers = !expandIdentifiers },
+                        onShowMetricInfo = { selectedMetricExplanation = it }
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
                 }
 
-                // ── 6. IMS / VOICE & ADVANCED CAPABILITIES ──
+                // ── 6. IMS / VOICE & ADVANCED CAPABILITIES (EXPANDABLE) ──
                 item {
-                    ImsVoiceSection(sub = currentSub)
-                    Spacer(modifier = Modifier.height(14.dp))
+                    ImsVoiceSection(
+                        sub = currentSub,
+                        isExpanded = expandIms,
+                        onToggleExpand = { expandIms = !expandIms },
+                        onShowMetricInfo = { selectedMetricExplanation = it }
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
                 }
 
-                // ── 7. NEIGHBOUR CELLS ──
+                // ── 7. NEIGHBOUR CELLS (EXPANDABLE) ──
                 item {
                     NeighbourCellsSection(
                         neighbors = currentSub.neighborCells,
                         currentSort = neighborSort,
-                        onSortChange = { viewModel.setNeighborSort(it) }
+                        onSortChange = { viewModel.setNeighborSort(it) },
+                        isExpanded = expandNeighbors,
+                        onToggleExpand = { expandNeighbors = !expandNeighbors }
                     )
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
                 }
 
                 // ── 8. ADVANCED TECHNICAL DETAILS TRIGGER ──
@@ -323,6 +464,14 @@ fun NetworkScreen(
                 onDismiss = { viewModel.toggleTechnicalDetails(false) }
             )
         }
+    }
+
+    // ── Cell Metric Info Dialog ──
+    selectedMetricExplanation?.let { explanation ->
+        CellMetricInfoDialog(
+            metric = explanation,
+            onDismiss = { selectedMetricExplanation = null }
+        )
     }
 }
 
@@ -466,7 +615,7 @@ fun CarrierSummaryBanner(sub: SimSubscription, activeRat: RadioAccessTechnology)
             HorizontalDivider(color = BorderSubtle, thickness = 0.5.dp)
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Sub-status chips
+            // Sub-status row
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -487,17 +636,30 @@ fun CarrierSummaryBanner(sub: SimSubscription, activeRat: RadioAccessTechnology)
                             fontSize = 11.5.sp
                         )
                     )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "•  ${sub.dataState.lowercase().replaceFirstChar { it.uppercase() }}",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            color = if (sub.dataState == "CONNECTED") TextPrimary else TextSecondary,
+                            fontSize = 11.5.sp
+                        )
+                    )
                 }
 
-                Text(
-                    text = "Data: ${sub.dataState.lowercase().replaceFirstChar { it.uppercase() }}",
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        color = if (sub.dataState == "CONNECTED") TextPrimary else TextSecondary,
-                        fontSize = 11.5.sp
-                    )
-                )
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    if (sub.isVoNR) {
+                        Text(
+                            text = "Vo5G ✓",
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                color = StatusGreen,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 11.sp
+                            )
+                        )
+                    }
                     Text(
                         text = "VoLTE ${if (sub.isVoLTE) "✓" else "✕"}",
                         style = MaterialTheme.typography.bodySmall.copy(
@@ -506,7 +668,6 @@ fun CarrierSummaryBanner(sub: SimSubscription, activeRat: RadioAccessTechnology)
                             fontSize = 11.sp
                         )
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "VoWiFi ${if (sub.isVoWiFi) "✓" else "✕"}",
                         style = MaterialTheme.typography.bodySmall.copy(
@@ -524,7 +685,13 @@ fun CarrierSummaryBanner(sub: SimSubscription, activeRat: RadioAccessTechnology)
 // ── Signal Summary: Prominent 2x2 Grid with Level & Units ──
 
 @Composable
-fun SignalSummaryCard(servingCell: CellData?, overallDbm: Int?) {
+fun SignalSummaryCard(
+    servingCell: CellData?,
+    overallDbm: Int?,
+    isExpanded: Boolean,
+    onToggleExpand: () -> Unit,
+    onShowMetricInfo: (MetricExplanation) -> Unit
+) {
     val rat = servingCell?.rat ?: RadioAccessTechnology.UNKNOWN
     val is2G = rat == RadioAccessTechnology.EDGE || rat == RadioAccessTechnology.GPRS
     val is3G = rat == RadioAccessTechnology.UMTS || rat == RadioAccessTechnology.HSPA || rat == RadioAccessTechnology.HSPAP
@@ -543,18 +710,22 @@ fun SignalSummaryCard(servingCell: CellData?, overallDbm: Int?) {
     val cell1Label: String
     val cell1Val: String
     val cell1Quality: MetricQuality
+    val cell1InfoKey: String
 
     val cell2Label: String
     val cell2Val: String
     val cell2Quality: MetricQuality
+    val cell2InfoKey: String
 
     val cell3Label: String
     val cell3Val: String
     val cell3Quality: MetricQuality
+    val cell3InfoKey: String
 
     val cell4Label: String
     val cell4Val: String
     val cell4Quality: MetricQuality
+    val cell4InfoKey: String
 
     val primaryQuality: MetricQuality
 
@@ -565,18 +736,22 @@ fun SignalSummaryCard(servingCell: CellData?, overallDbm: Int?) {
             cell1Label = "RSSI"
             cell1Val = rssiVal?.let { "$it dBm" } ?: "N/A"
             cell1Quality = q
+            cell1InfoKey = "RSRP"
 
             cell2Label = "BER"
             cell2Val = servingCell?.ber?.let { "$it" } ?: "N/A"
             cell2Quality = MetricQuality.NA
+            cell2InfoKey = "RSRQ"
 
             cell3Label = "TA"
             cell3Val = servingCell?.timingAdvance?.let { "$it" } ?: "N/A"
             cell3Quality = MetricQuality.NA
+            cell3InfoKey = "TA"
 
             cell4Label = "BSIC"
             cell4Val = servingCell?.bsic?.let { "$it" } ?: "N/A"
             cell4Quality = MetricQuality.NA
+            cell4InfoKey = "PCI"
 
             primaryQuality = q
         }
@@ -586,18 +761,22 @@ fun SignalSummaryCard(servingCell: CellData?, overallDbm: Int?) {
             cell1Label = "RSCP"
             cell1Val = rscpVal?.let { "$it dBm" } ?: "N/A"
             cell1Quality = q
+            cell1InfoKey = "RSRP"
 
             cell2Label = "Ec/No"
             cell2Val = servingCell?.ecNo?.let { "${String.format("%.1f", it)} dB" } ?: "N/A"
             cell2Quality = MetricQuality.NA
+            cell2InfoKey = "RSRQ"
 
             cell3Label = "RSSI"
             cell3Val = servingCell?.rssi?.let { "$it dBm" } ?: "N/A"
             cell3Quality = classifyRssi(servingCell?.rssi)
+            cell3InfoKey = "RSRP"
 
             cell4Label = "PSC"
             cell4Val = servingCell?.pci?.let { "$it" } ?: "N/A"
             cell4Quality = MetricQuality.NA
+            cell4InfoKey = "PCI"
 
             primaryQuality = q
         }
@@ -610,18 +789,22 @@ fun SignalSummaryCard(servingCell: CellData?, overallDbm: Int?) {
             cell1Label = "SS-RSRP"
             cell1Val = ssRsrpVal?.let { "$it dBm" } ?: "N/A"
             cell1Quality = q
+            cell1InfoKey = "RSRP"
 
             cell2Label = "SS-RSRQ"
             cell2Val = ssRsrqVal?.let { "$it dB" } ?: "N/A"
             cell2Quality = classifyRsrq(ssRsrqVal)
+            cell2InfoKey = "RSRQ"
 
             cell3Label = "CSI-RSRP"
             cell3Val = servingCell?.csiRsrp?.let { "$it dBm" } ?: (rssi?.let { "$it dBm" } ?: "N/A")
             cell3Quality = MetricQuality.NA
+            cell3InfoKey = "RSRP"
 
             cell4Label = "SS-SINR"
             cell4Val = ssSinrVal?.let { "${String.format("%.1f", it)} dB" } ?: "N/A"
             cell4Quality = classifySinr(ssSinrVal)
+            cell4InfoKey = "SINR"
 
             primaryQuality = q
         }
@@ -630,18 +813,22 @@ fun SignalSummaryCard(servingCell: CellData?, overallDbm: Int?) {
             cell1Label = "RSRP"
             cell1Val = rsrp?.let { "$it dBm" } ?: "N/A"
             cell1Quality = rsrpQuality
+            cell1InfoKey = "RSRP"
 
             cell2Label = "RSRQ"
             cell2Val = rsrq?.let { "$it dB" } ?: "N/A"
             cell2Quality = rsrqQuality
+            cell2InfoKey = "RSRQ"
 
             cell3Label = "RSSI"
             cell3Val = rssi?.let { "$it dBm" } ?: "N/A"
             cell3Quality = MetricQuality.NA
+            cell3InfoKey = "RSRP"
 
             cell4Label = "SINR"
             cell4Val = sinr?.let { "${String.format("%.1f", it)} dB" } ?: "N/A"
             cell4Quality = sinrQuality
+            cell4InfoKey = "SINR"
 
             primaryQuality = rsrpQuality
         }
@@ -668,9 +855,11 @@ fun SignalSummaryCard(servingCell: CellData?, overallDbm: Int?) {
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
-            // Signal Header with Level Meter
+            // Signal Header with Level Meter & Expand/Shrink Toggle
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onToggleExpand() },
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -686,7 +875,7 @@ fun SignalSummaryCard(servingCell: CellData?, overallDbm: Int?) {
                     )
                 }
 
-                // Bars Level (0 - 4 / 5)
+                // Bars Level (0 - 4 / 5) & Toggle Icon
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     SignalBars(level = signalLevel, maxBars = 4)
                     Spacer(modifier = Modifier.width(8.dp))
@@ -698,88 +887,117 @@ fun SignalSummaryCard(servingCell: CellData?, overallDbm: Int?) {
                             fontSize = 11.sp
                         )
                     )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // 2x2 High Information Density Grid (RAT Adaptive)
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(SurfaceElevated, RoundedCornerShape(8.dp))
-                    .padding(1.dp)
-            ) {
-                Row(modifier = Modifier.fillMaxWidth()) {
-                    MetricCell(
-                        label = cell1Label,
-                        value = cell1Val,
-                        quality = cell1Quality,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Box(modifier = Modifier.width(1.dp).height(54.dp).background(BorderSubtle))
-                    MetricCell(
-                        label = cell2Label,
-                        value = cell2Val,
-                        quality = cell2Quality,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-
-                Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(BorderSubtle))
-
-                Row(modifier = Modifier.fillMaxWidth()) {
-                    MetricCell(
-                        label = cell3Label,
-                        value = cell3Val,
-                        quality = cell3Quality,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Box(modifier = Modifier.width(1.dp).height(54.dp).background(BorderSubtle))
-                    MetricCell(
-                        label = cell4Label,
-                        value = cell4Val,
-                        quality = cell4Quality,
-                        modifier = Modifier.weight(1f)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Icon(
+                        imageVector = if (isExpanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                        contentDescription = if (isExpanded) "Collapse" else "Expand",
+                        tint = AccentCyan,
+                        modifier = Modifier.size(18.dp)
                     )
                 }
             }
 
-            // Tower Distance Badge
-            if (towerDistanceText != null) {
+            if (!isExpanded) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "$cell1Label: $cell1Val  •  $cell2Label: $cell2Val  •  $cell4Label: $cell4Val",
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        color = TextSecondary,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 11.5.sp
+                    ),
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                )
+            } else {
                 Spacer(modifier = Modifier.height(10.dp))
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = AccentCyanBg,
-                    border = BorderStroke(1.dp, AccentCyanBorder),
-                    modifier = Modifier.fillMaxWidth()
+
+                // 2x2 High Information Density Grid (RAT Adaptive)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(SurfaceElevated, RoundedCornerShape(8.dp))
+                        .padding(1.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        MetricCell(
+                            label = cell1Label,
+                            value = cell1Val,
+                            quality = cell1Quality,
+                            modifier = Modifier.weight(1f),
+                            infoKey = cell1InfoKey,
+                            onShowInfo = onShowMetricInfo
+                        )
+                        Box(modifier = Modifier.width(1.dp).height(54.dp).background(BorderSubtle))
+                        MetricCell(
+                            label = cell2Label,
+                            value = cell2Val,
+                            quality = cell2Quality,
+                            modifier = Modifier.weight(1f),
+                            infoKey = cell2InfoKey,
+                            onShowInfo = onShowMetricInfo
+                        )
+                    }
+
+                    Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(BorderSubtle))
+
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        MetricCell(
+                            label = cell3Label,
+                            value = cell3Val,
+                            quality = cell3Quality,
+                            modifier = Modifier.weight(1f),
+                            infoKey = cell3InfoKey,
+                            onShowInfo = onShowMetricInfo
+                        )
+                        Box(modifier = Modifier.width(1.dp).height(54.dp).background(BorderSubtle))
+                        MetricCell(
+                            label = cell4Label,
+                            value = cell4Val,
+                            quality = cell4Quality,
+                            modifier = Modifier.weight(1f),
+                            infoKey = cell4InfoKey,
+                            onShowInfo = onShowMetricInfo
+                        )
+                    }
+                }
+
+                // Tower Distance Badge
+                if (towerDistanceText != null) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = AccentCyanBg,
+                        border = BorderStroke(1.dp, AccentCyanBorder),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Icon(
-                            imageVector = Icons.Outlined.CellTower,
-                            contentDescription = null,
-                            tint = AccentCyan,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Serving Tower Distance: ",
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                color = TextSecondary,
-                                fontWeight = FontWeight.Medium
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.CellTower,
+                                contentDescription = null,
+                                tint = AccentCyan,
+                                modifier = Modifier.size(16.dp)
                             )
-                        )
-                        Text(
-                            text = towerDistanceText,
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                color = AccentCyan,
-                                fontWeight = FontWeight.Bold,
-                                fontFamily = FontFamily.Monospace
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Serving Tower Distance: ",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    color = TextSecondary,
+                                    fontWeight = FontWeight.Medium
+                                )
                             )
-                        )
+                            Text(
+                                text = towerDistanceText,
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    color = AccentCyan,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            )
+                        }
                     }
                 }
             }
@@ -792,7 +1010,9 @@ fun MetricCell(
     label: String,
     value: String,
     quality: MetricQuality,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    infoKey: String? = null,
+    onShowInfo: ((MetricExplanation) -> Unit)? = null
 ) {
     Column(
         modifier = modifier
@@ -804,14 +1024,36 @@ fun MetricCell(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelSmall.copy(
-                    color = TextSecondary,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        color = TextSecondary,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
                 )
-            )
+                if (infoKey != null && onShowInfo != null) {
+                    val explanation = CellMetricGlossary.GLOSSARY[infoKey.uppercase()]
+                    if (explanation != null) {
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Box(
+                            modifier = Modifier
+                                .size(14.dp)
+                                .background(AccentCyan.copy(alpha = 0.15f), CircleShape)
+                                .clickable { onShowInfo(explanation) },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "i",
+                                color = AccentCyan,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
             if (quality != MetricQuality.NA) {
                 Text(
                     text = quality.label,
@@ -867,8 +1109,13 @@ fun SignalBars(level: Int, maxBars: Int = 4) {
 fun ServingCellSection(
     serving: CellData?,
     secondaryServing: CellData?,
-    sub: SimSubscription
+    sub: SimSubscription,
+    isExpanded: Boolean,
+    onToggleExpand: () -> Unit,
+    onShowMetricInfo: (MetricExplanation) -> Unit
 ) {
+    val techLabel = serving?.band ?: serving?.rat?.label ?: "Unknown"
+
     Surface(
         shape = RoundedCornerShape(10.dp),
         color = SurfaceBase,
@@ -877,7 +1124,9 @@ fun ServingCellSection(
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onToggleExpand() },
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -891,125 +1140,153 @@ fun ServingCellSection(
                     )
                 )
 
-                val techLabel = serving?.band ?: serving?.rat?.label ?: "Unknown"
-                Surface(
-                    shape = RoundedCornerShape(4.dp),
-                    color = SurfaceHighlight
-                ) {
-                    Text(
-                        text = techLabel,
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            color = AccentCyan,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 10.5.sp
-                        ),
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = SurfaceHighlight
+                    ) {
+                        Text(
+                            text = techLabel,
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                color = AccentCyan,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 10.5.sp
+                            ),
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Icon(
+                        imageVector = if (isExpanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                        contentDescription = if (isExpanded) "Collapse" else "Expand",
+                        tint = AccentCyan,
+                        modifier = Modifier.size(18.dp)
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            if (!isExpanded) {
+                Spacer(modifier = Modifier.height(6.dp))
+                val pciText = serving?.pci?.let { "PCI $it" }
+                val gnbText = serving?.enbId?.let { if (serving.rat == RadioAccessTechnology.NR_SA || serving.rat == RadioAccessTechnology.NR_NSA) "gNB $it" else "eNB $it" }
+                val arfcnText = serving?.arfcn?.let { "ARFCN $it" }
+                val bandText = serving?.band
+                val compactSummary = listOfNotNull(bandText, pciText, gnbText, arfcnText).filter { it.isNotBlank() }.joinToString("  •  ")
 
-            if (serving == null) {
                 Text(
-                    text = "No serving cell reported by Android radio framework.",
-                    style = MaterialTheme.typography.bodySmall.copy(color = TextSecondary)
+                    text = compactSummary.ifBlank { "Serving Cell Details" },
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        color = TextSecondary,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 11.5.sp
+                    ),
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                 )
             } else {
-                val rat = serving.rat
-                val is2G = rat == RadioAccessTechnology.EDGE || rat == RadioAccessTechnology.GPRS
-                val is3G = rat == RadioAccessTechnology.UMTS || rat == RadioAccessTechnology.HSPA || rat == RadioAccessTechnology.HSPAP
-                val isNr = rat == RadioAccessTechnology.NR_SA || rat == RadioAccessTechnology.NR_NSA
-
-                when {
-                    is2G -> {
-                        serving.lac?.let { TechnicalRow(label = "Location Area Code (LAC)", value = "$it") }
-                        serving.cellId?.let { TechnicalRow(label = "Cell ID (CID)", value = "$it") }
-                        serving.arfcn?.let { TechnicalRow(label = "ARFCN (BCCH Channel)", value = "$it") }
-                        serving.bsic?.let { TechnicalRow(label = "Base Station ID (BSIC)", value = "$it") }
-                        serving.timingAdvance?.let {
-                            TechnicalRow(label = "Timing Advance (TA)", value = "$it (~${it * 554}m)")
-                        }
-                        serving.ber?.let { TechnicalRow(label = "Bit Error Rate (BER)", value = "$it") }
-                    }
-                    is3G -> {
-                        serving.lac?.let { TechnicalRow(label = "Location Area Code (LAC)", value = "$it") }
-                        serving.cellId?.let { TechnicalRow(label = "Cell ID (CID / UCID)", value = "$it") }
-                        serving.pci?.let { TechnicalRow(label = "Primary Scrambling Code (PSC)", value = "$it") }
-                        serving.arfcn?.let { TechnicalRow(label = "UARFCN", value = "$it") }
-                        serving.rscp?.let { TechnicalRow(label = "RSCP", value = "$it dBm") }
-                        serving.ecNo?.let { TechnicalRow(label = "Ec/No", value = "${String.format("%.1f", it)} dB") }
-                    }
-                    isNr -> {
-                        serving.pci?.let { TechnicalRow(label = "Physical Cell ID (PCI)", value = "$it") }
-                        serving.tac?.let { TechnicalRow(label = "Tracking Area Code (TAC)", value = "$it") }
-                        serving.cellId?.let { TechnicalRow(label = "NR Cell ID (NCI)", value = "$it") }
-                        serving.enbId?.let { TechnicalRow(label = "gNodeB ID", value = "$it (Sector ${serving.sectorId ?: 0})") }
-                        serving.arfcn?.let { TechnicalRow(label = "NR-ARFCN", value = "$it") }
-                        serving.bandwidthKhz?.let {
-                            TechnicalRow(label = "Channel Bandwidth", value = "${it / 1000} MHz (${it} kHz)")
-                        }
-                        serving.timingAdvance?.let {
-                            val approxMeters = (it * 78.12).toInt()
-                            TechnicalRow(label = "Timing Advance (TA)", value = "$it (~${approxMeters}m)")
-                        }
-                        serving.csiRsrp?.let { TechnicalRow(label = "CSI-RSRP", value = "$it dBm") }
-                        serving.csiRsrq?.let { TechnicalRow(label = "CSI-RSRQ", value = "$it dB") }
-                        serving.csiSinr?.let { TechnicalRow(label = "CSI-SINR", value = "${String.format("%.1f", it)} dB") }
-                    }
-                    else -> {
-                        // 4G LTE
-                        serving.pci?.let { TechnicalRow(label = "Physical Cell ID (PCI)", value = "$it") }
-                        serving.tac?.let { TechnicalRow(label = "Tracking Area Code (TAC)", value = "$it") }
-                        serving.cellId?.let { TechnicalRow(label = "Cell ID (ECI)", value = "$it") }
-                        serving.enbId?.let { TechnicalRow(label = "eNodeB ID", value = "$it (Sector ${serving.sectorId ?: 0})") }
-                        serving.arfcn?.let { TechnicalRow(label = "EARFCN", value = "$it") }
-                        serving.bandwidthKhz?.let {
-                            TechnicalRow(label = "Channel Bandwidth", value = "${it / 1000} MHz (${it} kHz)")
-                        }
-                        serving.timingAdvance?.let {
-                            val approxMeters = (it * 78.12).toInt()
-                            TechnicalRow(label = "Timing Advance (TA)", value = "$it (~${approxMeters}m)")
-                        }
-                        serving.cqi?.let { TechnicalRow(label = "Channel Quality (CQI)", value = "$it") }
-                    }
-                }
-            }
-
-            // Secondary Serving Cell (e.g. NR secondary carrier in 5G NSA)
-            if (secondaryServing != null) {
-                Spacer(modifier = Modifier.height(10.dp))
-                HorizontalDivider(color = BorderSubtle, thickness = 0.5.dp)
                 Spacer(modifier = Modifier.height(10.dp))
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+                if (serving == null) {
                     Text(
-                        text = "SECONDARY CARRIER (NR NSA)",
-                        style = MaterialTheme.typography.titleSmall.copy(
-                            color = TextSecondary,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 10.sp
-                        )
+                        text = "No serving cell reported by Android radio framework.",
+                        style = MaterialTheme.typography.bodySmall.copy(color = TextSecondary)
                     )
-                    Text(
-                        text = secondaryServing.band ?: secondaryServing.rat.label,
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            color = StatusGreen,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 10.sp
-                        )
-                    )
+                } else {
+                    val rat = serving.rat
+                    val is2G = rat == RadioAccessTechnology.EDGE || rat == RadioAccessTechnology.GPRS
+                    val is3G = rat == RadioAccessTechnology.UMTS || rat == RadioAccessTechnology.HSPA || rat == RadioAccessTechnology.HSPAP
+                    val isNr = rat == RadioAccessTechnology.NR_SA || rat == RadioAccessTechnology.NR_NSA
+
+                    when {
+                        is2G -> {
+                            serving.lac?.let { TechnicalRow(label = "Location Area Code (LAC)", value = "$it", infoKey = "TAC", onShowInfo = onShowMetricInfo) }
+                            serving.cellId?.let { TechnicalRow(label = "Cell ID (CID)", value = "$it", infoKey = "PCI", onShowInfo = onShowMetricInfo) }
+                            serving.arfcn?.let { TechnicalRow(label = "ARFCN (BCCH Channel)", value = "$it", infoKey = "ARFCN", onShowInfo = onShowMetricInfo) }
+                            serving.bsic?.let { TechnicalRow(label = "Base Station ID (BSIC)", value = "$it") }
+                            serving.timingAdvance?.let {
+                                TechnicalRow(label = "Timing Advance (TA)", value = "$it (~${it * 554}m)", infoKey = "TA", onShowInfo = onShowMetricInfo)
+                            }
+                            serving.ber?.let { TechnicalRow(label = "Bit Error Rate (BER)", value = "$it") }
+                        }
+                        is3G -> {
+                            serving.lac?.let { TechnicalRow(label = "Location Area Code (LAC)", value = "$it", infoKey = "TAC", onShowInfo = onShowMetricInfo) }
+                            serving.cellId?.let { TechnicalRow(label = "Cell ID (CID / UCID)", value = "$it", infoKey = "PCI", onShowInfo = onShowMetricInfo) }
+                            serving.pci?.let { TechnicalRow(label = "Primary Scrambling Code (PSC)", value = "$it", infoKey = "PCI", onShowInfo = onShowMetricInfo) }
+                            serving.arfcn?.let { TechnicalRow(label = "UARFCN", value = "$it", infoKey = "ARFCN", onShowInfo = onShowMetricInfo) }
+                            serving.rscp?.let { TechnicalRow(label = "RSCP", value = "$it dBm", infoKey = "RSRP", onShowInfo = onShowMetricInfo) }
+                            serving.ecNo?.let { TechnicalRow(label = "Ec/No", value = "${String.format("%.1f", it)} dB", infoKey = "RSRQ", onShowInfo = onShowMetricInfo) }
+                        }
+                        isNr -> {
+                            serving.pci?.let { TechnicalRow(label = "Physical Cell ID (PCI)", value = "$it", infoKey = "PCI", onShowInfo = onShowMetricInfo) }
+                            serving.tac?.let { TechnicalRow(label = "Tracking Area Code (TAC)", value = "$it", infoKey = "TAC", onShowInfo = onShowMetricInfo) }
+                            serving.cellId?.let { TechnicalRow(label = "NR Cell ID (NCI)", value = "$it") }
+                            serving.enbId?.let { TechnicalRow(label = "gNodeB ID", value = "$it (Sector ${serving.sectorId ?: 0})", infoKey = "GNB", onShowInfo = onShowMetricInfo) }
+                            serving.arfcn?.let { TechnicalRow(label = "NR-ARFCN", value = "$it", infoKey = "ARFCN", onShowInfo = onShowMetricInfo) }
+                            serving.bandwidthKhz?.let {
+                                TechnicalRow(label = "Channel Bandwidth", value = "${it / 1000} MHz (${it} kHz)", infoKey = "BAND", onShowInfo = onShowMetricInfo)
+                            }
+                            serving.timingAdvance?.let {
+                                val approxMeters = (it * 78.12).toInt()
+                                TechnicalRow(label = "Timing Advance (TA)", value = "$it (~${approxMeters}m)", infoKey = "TA", onShowInfo = onShowMetricInfo)
+                            }
+                            serving.csiRsrp?.let { TechnicalRow(label = "CSI-RSRP", value = "$it dBm", infoKey = "RSRP", onShowInfo = onShowMetricInfo) }
+                            serving.csiRsrq?.let { TechnicalRow(label = "CSI-RSRQ", value = "$it dB", infoKey = "RSRQ", onShowInfo = onShowMetricInfo) }
+                            serving.csiSinr?.let { TechnicalRow(label = "CSI-SINR", value = "${String.format("%.1f", it)} dB", infoKey = "SINR", onShowInfo = onShowMetricInfo) }
+                        }
+                        else -> {
+                            // 4G LTE
+                            serving.pci?.let { TechnicalRow(label = "Physical Cell ID (PCI)", value = "$it", infoKey = "PCI", onShowInfo = onShowMetricInfo) }
+                            serving.tac?.let { TechnicalRow(label = "Tracking Area Code (TAC)", value = "$it", infoKey = "TAC", onShowInfo = onShowMetricInfo) }
+                            serving.cellId?.let { TechnicalRow(label = "Cell ID (ECI)", value = "$it") }
+                            serving.enbId?.let { TechnicalRow(label = "eNodeB ID", value = "$it (Sector ${serving.sectorId ?: 0})", infoKey = "GNB", onShowInfo = onShowMetricInfo) }
+                            serving.arfcn?.let { TechnicalRow(label = "EARFCN", value = "$it", infoKey = "ARFCN", onShowInfo = onShowMetricInfo) }
+                            serving.bandwidthKhz?.let {
+                                TechnicalRow(label = "Channel Bandwidth", value = "${it / 1000} MHz (${it} kHz)", infoKey = "BAND", onShowInfo = onShowMetricInfo)
+                            }
+                            serving.timingAdvance?.let {
+                                val approxMeters = (it * 78.12).toInt()
+                                TechnicalRow(label = "Timing Advance (TA)", value = "$it (~${approxMeters}m)", infoKey = "TA", onShowInfo = onShowMetricInfo)
+                            }
+                            serving.cqi?.let { TechnicalRow(label = "Channel Quality (CQI)", value = "$it") }
+                        }
+                    }
                 }
 
-                Spacer(modifier = Modifier.height(6.dp))
-                TechnicalRow(label = "NR PCI", value = secondaryServing.pci?.toString() ?: "N/A")
-                TechnicalRow(label = "NR-ARFCN", value = secondaryServing.arfcn?.toString() ?: "N/A")
-                secondaryServing.ssRsrp?.let { TechnicalRow(label = "SS-RSRP", value = "$it dBm") }
-                secondaryServing.ssSinr?.let { TechnicalRow(label = "SS-SINR", value = "${it.toInt()} dB") }
+                // Secondary Serving Cell (e.g. NR secondary carrier in 5G NSA)
+                if (secondaryServing != null) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    HorizontalDivider(color = BorderSubtle, thickness = 0.5.dp)
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "SECONDARY CARRIER (NR NSA)",
+                            style = MaterialTheme.typography.titleSmall.copy(
+                                color = TextSecondary,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 10.sp
+                            )
+                        )
+                        Text(
+                            text = secondaryServing.band ?: secondaryServing.rat.label,
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                color = StatusGreen,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 10.sp
+                            )
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+                    TechnicalRow(label = "NR PCI", value = secondaryServing.pci?.toString() ?: "N/A", infoKey = "PCI", onShowInfo = onShowMetricInfo)
+                    TechnicalRow(label = "NR-ARFCN", value = secondaryServing.arfcn?.toString() ?: "N/A", infoKey = "ARFCN", onShowInfo = onShowMetricInfo)
+                    secondaryServing.ssRsrp?.let { TechnicalRow(label = "SS-RSRP", value = "$it dBm", infoKey = "RSRP", onShowInfo = onShowMetricInfo) }
+                    secondaryServing.ssSinr?.let { TechnicalRow(label = "SS-SINR", value = "${it.toInt()} dB", infoKey = "SINR", onShowInfo = onShowMetricInfo) }
+                }
             }
         }
     }
@@ -1018,7 +1295,13 @@ fun ServingCellSection(
 // ── Network Identifiers Section ──
 
 @Composable
-fun NetworkIdentifiersSection(sub: SimSubscription, serving: CellData?) {
+fun NetworkIdentifiersSection(
+    sub: SimSubscription,
+    serving: CellData?,
+    isExpanded: Boolean,
+    onToggleExpand: () -> Unit,
+    onShowMetricInfo: (MetricExplanation) -> Unit
+) {
     val info = sub.info
     val mcc = info.mcc ?: serving?.mcc ?: "N/A"
     val mnc = info.mnc ?: serving?.mnc ?: "N/A"
@@ -1031,24 +1314,53 @@ fun NetworkIdentifiersSection(sub: SimSubscription, serving: CellData?) {
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
-            Text(
-                text = "NETWORK IDENTIFIERS",
-                style = MaterialTheme.typography.titleSmall.copy(
-                    color = TextSecondary,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.1.sp,
-                    fontSize = 11.sp
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onToggleExpand() },
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "NETWORK IDENTIFIERS",
+                    style = MaterialTheme.typography.titleSmall.copy(
+                        color = TextSecondary,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.1.sp,
+                        fontSize = 11.sp
+                    )
                 )
-            )
 
-            Spacer(modifier = Modifier.height(10.dp))
+                Icon(
+                    imageVector = if (isExpanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                    contentDescription = if (isExpanded) "Collapse" else "Expand",
+                    tint = AccentCyan,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
 
-            TechnicalRow(label = "Mobile Country Code (MCC)", value = mcc)
-            TechnicalRow(label = "Mobile Network Code (MNC)", value = mnc)
-            TechnicalRow(label = "PLMN Numeric", value = plmn)
-            TechnicalRow(label = "Country ISO", value = info.countryIso.uppercase().ifBlank { "N/A" })
-            TechnicalRow(label = "Roaming", value = if (info.isRoaming) "Yes (Roaming)" else "No (Home)")
-            TechnicalRow(label = "Embedded SIM (eSIM)", value = if (info.isEmbedded) "Yes" else "No")
+            if (!isExpanded) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "PLMN $plmn  •  ${if (info.isRoaming) "Roaming" else "Home Network"}  •  ${if (info.isEmbedded) "eSIM" else "Physical SIM"}",
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        color = TextSecondary,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 11.5.sp
+                    ),
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                )
+            } else {
+                Spacer(modifier = Modifier.height(10.dp))
+
+                TechnicalRow(label = "Mobile Country Code (MCC)", value = mcc)
+                TechnicalRow(label = "Mobile Network Code (MNC)", value = mnc)
+                TechnicalRow(label = "PLMN Numeric", value = plmn, infoKey = "PLMN", onShowInfo = onShowMetricInfo)
+                TechnicalRow(label = "Country ISO", value = info.countryIso.uppercase().ifBlank { "N/A" })
+                TechnicalRow(label = "Roaming", value = if (info.isRoaming) "Yes (Roaming)" else "No (Home)")
+                TechnicalRow(label = "Embedded SIM (eSIM)", value = if (info.isEmbedded) "Yes" else "No")
+            }
         }
     }
 }
@@ -1056,7 +1368,12 @@ fun NetworkIdentifiersSection(sub: SimSubscription, serving: CellData?) {
 // ── IMS / Voice Section ──
 
 @Composable
-fun ImsVoiceSection(sub: SimSubscription) {
+fun ImsVoiceSection(
+    sub: SimSubscription,
+    isExpanded: Boolean,
+    onToggleExpand: () -> Unit,
+    onShowMetricInfo: (MetricExplanation) -> Unit
+) {
     Surface(
         shape = RoundedCornerShape(10.dp),
         color = SurfaceBase,
@@ -1064,44 +1381,95 @@ fun ImsVoiceSection(sub: SimSubscription) {
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
-            Text(
-                text = "IMS & VOICE SERVICES",
-                style = MaterialTheme.typography.titleSmall.copy(
-                    color = TextSecondary,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.1.sp,
-                    fontSize = 11.sp
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onToggleExpand() },
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "IMS & VOICE SERVICES",
+                    style = MaterialTheme.typography.titleSmall.copy(
+                        color = TextSecondary,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.1.sp,
+                        fontSize = 11.sp
+                    )
                 )
-            )
 
-            Spacer(modifier = Modifier.height(10.dp))
+                Icon(
+                    imageVector = if (isExpanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                    contentDescription = if (isExpanded) "Collapse" else "Expand",
+                    tint = AccentCyan,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
 
-            ImsCapabilityRow(
-                label = "IMS Registration",
-                isAvailable = sub.isImsRegistered,
-                statusText = if (sub.isImsRegistered) "Registered ✓" else "Not registered"
-            )
-            ImsCapabilityRow(
-                label = "VoLTE (Voice over LTE)",
-                isAvailable = sub.isVoLTE,
-                statusText = if (sub.isVoLTE) "Available ✓" else "Unavailable"
-            )
-            ImsCapabilityRow(
-                label = "VoWiFi / IWLAN (Wi-Fi Calling)",
-                isAvailable = sub.isVoWiFi,
-                statusText = if (sub.isVoWiFi) "Active ✓" else "Inactive"
-            )
-            ImsCapabilityRow(
-                label = "Video Calling (ViLTE)",
-                isAvailable = sub.videoCallingSupported,
-                statusText = if (sub.videoCallingSupported) "Supported ✓" else "Unavailable"
-            )
+            if (!isExpanded) {
+                Spacer(modifier = Modifier.height(6.dp))
+                val imsStatus = if (sub.isImsRegistered) "Registered ✓" else "Not registered"
+                val vonrStatus = if (sub.isVoNR) "Active" else "Off"
+                val volteStatus = if (sub.isVoLTE) "Available" else "Off"
+                Text(
+                    text = "IMS: $imsStatus  •  Vo5G: $vonrStatus  •  VoLTE: $volteStatus",
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        color = TextSecondary,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 11.5.sp
+                    ),
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                )
+            } else {
+                Spacer(modifier = Modifier.height(10.dp))
+
+                ImsCapabilityRow(
+                    label = "IMS Registration",
+                    isAvailable = sub.isImsRegistered,
+                    statusText = if (sub.isImsRegistered) "Registered ✓" else "Not registered",
+                    infoKey = "IMS",
+                    onShowInfo = onShowMetricInfo
+                )
+                ImsCapabilityRow(
+                    label = "Vo5G / VoNR (Voice over 5G)",
+                    isAvailable = sub.isVoNR,
+                    statusText = if (sub.isVoNR) "Active ✓" else "Unavailable",
+                    infoKey = "VONR",
+                    onShowInfo = onShowMetricInfo
+                )
+                ImsCapabilityRow(
+                    label = "VoLTE (Voice over LTE)",
+                    isAvailable = sub.isVoLTE,
+                    statusText = if (sub.isVoLTE) "Available ✓" else "Unavailable",
+                    infoKey = "VOLTE",
+                    onShowInfo = onShowMetricInfo
+                )
+                ImsCapabilityRow(
+                    label = "VoWiFi / IWLAN (Wi-Fi Calling)",
+                    isAvailable = sub.isVoWiFi,
+                    statusText = if (sub.isVoWiFi) "Active ✓" else "Inactive",
+                    infoKey = "VOWIFI",
+                    onShowInfo = onShowMetricInfo
+                )
+                ImsCapabilityRow(
+                    label = "Video Calling (ViLTE)",
+                    isAvailable = sub.videoCallingSupported,
+                    statusText = if (sub.videoCallingSupported) "Supported ✓" else "Unavailable"
+                )
+            }
         }
     }
 }
 
 @Composable
-fun ImsCapabilityRow(label: String, isAvailable: Boolean, statusText: String) {
+fun ImsCapabilityRow(
+    label: String,
+    isAvailable: Boolean,
+    statusText: String,
+    infoKey: String? = null,
+    onShowInfo: ((MetricExplanation) -> Unit)? = null
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1109,13 +1477,39 @@ fun ImsCapabilityRow(label: String, isAvailable: Boolean, statusText: String) {
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodySmall.copy(
-                color = TextSecondary,
-                fontSize = 12.sp
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.weight(1f, fill = false)
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodySmall.copy(
+                    color = TextSecondary,
+                    fontSize = 12.sp
+                )
             )
-        )
+            if (infoKey != null && onShowInfo != null) {
+                val explanation = CellMetricGlossary.GLOSSARY[infoKey.uppercase()]
+                if (explanation != null) {
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Box(
+                        modifier = Modifier
+                            .size(16.dp)
+                            .background(AccentCyan.copy(alpha = 0.15f), CircleShape)
+                            .clickable { onShowInfo(explanation) },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "i",
+                            color = AccentCyan,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        }
+        Spacer(modifier = Modifier.width(8.dp))
         Text(
             text = statusText,
             style = MaterialTheme.typography.labelSmall.copy(
@@ -1133,7 +1527,9 @@ fun ImsCapabilityRow(label: String, isAvailable: Boolean, statusText: String) {
 fun NeighbourCellsSection(
     neighbors: List<CellData>,
     currentSort: NeighborSort,
-    onSortChange: (NeighborSort) -> Unit
+    onSortChange: (NeighborSort) -> Unit,
+    isExpanded: Boolean,
+    onToggleExpand: () -> Unit
 ) {
     // Sort neighbors
     val sortedNeighbors = remember(neighbors, currentSort) {
@@ -1152,8 +1548,11 @@ fun NeighbourCellsSection(
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
+            // Header Row with Title and Expand/Collapse Icon
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onToggleExpand() },
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -1167,8 +1566,43 @@ fun NeighbourCellsSection(
                     )
                 )
 
-                // Sort selector chips
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Icon(
+                    imageVector = if (isExpanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                    contentDescription = if (isExpanded) "Collapse" else "Expand",
+                    tint = AccentCyan,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+
+            if (!isExpanded) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = if (neighbors.isEmpty()) "No neighbour cells detected nearby" else "${neighbors.size} detected nearby (Tap to view details & channels)",
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        color = TextSecondary,
+                        fontSize = 11.5.sp
+                    )
+                )
+            } else {
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Sort selector chips on a dedicated horizontal row with non-wrapping text
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Sort:",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            color = TextSecondary,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    )
+
                     NeighborSort.values().forEach { sort ->
                         val isSelected = currentSort == sort
                         Surface(
@@ -1181,100 +1615,100 @@ fun NeighbourCellsSection(
                                 text = sort.label,
                                 style = MaterialTheme.typography.labelSmall.copy(
                                     color = if (isSelected) AccentCyan else TextSecondary,
-                                    fontSize = 9.5.sp,
+                                    fontSize = 10.sp,
                                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                                 ),
-                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                maxLines = 1,
+                                softWrap = false,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
                             )
                         }
                     }
                 }
-            }
 
-            Spacer(modifier = Modifier.height(10.dp))
-
-            if (sortedNeighbors.isEmpty()) {
-                Text(
-                    text = "No neighbour cells reported by modem. Some OEM chipsets restrict neighbour scanning during active cellular standby to conserve battery.",
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        color = TextSecondary,
-                        fontSize = 11.5.sp,
-                        lineHeight = 16.sp
+                if (sortedNeighbors.isEmpty()) {
+                    Text(
+                        text = "No neighbour cells reported by modem. Some OEM chipsets restrict neighbour scanning during active cellular standby to conserve battery.",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            color = TextSecondary,
+                            fontSize = 11.5.sp,
+                            lineHeight = 16.sp
+                        )
                     )
-                )
-            } else {
-                sortedNeighbors.forEachIndexed { index, cell ->
-                    val rsrp = cell.rsrp ?: cell.ssRsrp ?: cell.rssi
-                    val quality = classifyRsrp(rsrp)
+                } else {
+                    sortedNeighbors.forEachIndexed { index, cell ->
+                        val rsrp = cell.rsrp ?: cell.ssRsrp ?: cell.rssi
+                        val quality = classifyRsrp(rsrp)
 
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 6.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Surface(
-                                    shape = RoundedCornerShape(3.dp),
-                                    color = SurfaceHighlight
-                                ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 6.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Surface(
+                                        shape = RoundedCornerShape(3.dp),
+                                        color = SurfaceHighlight
+                                    ) {
+                                        Text(
+                                            text = cell.rat.shortLabel,
+                                            style = MaterialTheme.typography.labelSmall.copy(
+                                                color = AccentCyan,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 9.sp
+                                            ),
+                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(6.dp))
                                     Text(
-                                        text = cell.rat.shortLabel,
-                                        style = MaterialTheme.typography.labelSmall.copy(
-                                            color = AccentCyan,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 9.sp
-                                        ),
-                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                        text = "PCI ${cell.pci ?: "N/A"}",
+                                        style = MaterialTheme.typography.bodyMedium.copy(
+                                            color = TextPrimary,
+                                            fontWeight = FontWeight.SemiBold,
+                                            fontSize = 13.sp
+                                        )
                                     )
                                 }
-                                Spacer(modifier = Modifier.width(6.dp))
                                 Text(
-                                    text = "PCI ${cell.pci ?: "N/A"}",
+                                    text = cell.band ?: "ARFCN ${cell.arfcn ?: "N/A"}",
+                                    style = MaterialTheme.typography.bodySmall.copy(
+                                        color = TextSecondary,
+                                        fontSize = 11.sp
+                                    )
+                                )
+                            }
+
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text(
+                                    text = rsrp?.let { "$it dBm" } ?: "N/A",
                                     style = MaterialTheme.typography.bodyMedium.copy(
-                                        color = TextPrimary,
-                                        fontWeight = FontWeight.SemiBold,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontWeight = FontWeight.Bold,
+                                        color = quality.color,
                                         fontSize = 13.sp
                                     )
                                 )
-                            }
-                            Text(
-                                text = cell.band ?: "ARFCN ${cell.arfcn ?: "N/A"}",
-                                style = MaterialTheme.typography.bodySmall.copy(
-                                    color = TextSecondary,
-                                    fontSize = 11.sp
-                                )
-                            )
-                        }
-
-                        Column(horizontalAlignment = Alignment.End) {
-                            Text(
-                                text = rsrp?.let { "$it dBm" } ?: "N/A",
-                                style = MaterialTheme.typography.bodyMedium.copy(
-                                    fontFamily = FontFamily.Monospace,
-                                    fontWeight = FontWeight.Bold,
-                                    color = quality.color,
-                                    fontSize = 13.sp
-                                )
-                            )
-                            val rsrq = cell.rsrq ?: cell.ssRsrq
-                            if (rsrq != null) {
-                                Text(
-                                    text = "RSRQ $rsrq dB",
-                                    style = MaterialTheme.typography.bodySmall.copy(
-                                        fontFamily = FontFamily.Monospace,
-                                        color = TextSecondary,
-                                        fontSize = 10.5.sp
+                                val rsrq = cell.rsrq ?: cell.ssRsrq
+                                if (rsrq != null) {
+                                    Text(
+                                        text = "RSRQ $rsrq dB",
+                                        style = MaterialTheme.typography.bodySmall.copy(
+                                            fontFamily = FontFamily.Monospace,
+                                            color = TextSecondary,
+                                            fontSize = 10.5.sp
+                                        )
                                     )
-                                )
+                                }
                             }
                         }
-                    }
 
-                    if (index < sortedNeighbors.size - 1) {
-                        HorizontalDivider(color = BorderSubtle, thickness = 0.5.dp)
+                        if (index < sortedNeighbors.size - 1) {
+                            HorizontalDivider(color = BorderSubtle, thickness = 0.5.dp)
+                        }
                     }
                 }
             }
@@ -1288,7 +1722,9 @@ fun NeighbourCellsSection(
 fun TechnicalRow(
     label: String,
     value: String,
-    highlightColor: Color? = null
+    highlightColor: Color? = null,
+    infoKey: String? = null,
+    onShowInfo: ((MetricExplanation) -> Unit)? = null
 ) {
     Row(
         modifier = Modifier
@@ -1297,13 +1733,39 @@ fun TechnicalRow(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodySmall.copy(
-                color = TextSecondary,
-                fontSize = 12.sp
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.weight(1f, fill = false)
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodySmall.copy(
+                    color = TextSecondary,
+                    fontSize = 12.sp
+                )
             )
-        )
+            if (infoKey != null && onShowInfo != null) {
+                val explanation = CellMetricGlossary.GLOSSARY[infoKey.uppercase()]
+                if (explanation != null) {
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Box(
+                        modifier = Modifier
+                            .size(16.dp)
+                            .background(AccentCyan.copy(alpha = 0.15f), CircleShape)
+                            .clickable { onShowInfo(explanation) },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "i",
+                            color = AccentCyan,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        }
+        Spacer(modifier = Modifier.width(8.dp))
         Text(
             text = value,
             style = MaterialTheme.typography.bodySmall.copy(
@@ -1379,19 +1841,35 @@ fun TechnicalDetailsSheetContent(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NetworkModeScreen(
+    onNavigateBack: () -> Unit = {},
     viewModel: NetworkViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
     val currentRat by viewModel.currentRat.collectAsState()
     val sim1 by viewModel.sim1.collectAsState()
 
-    var selectedMode by remember { mutableStateOf("Auto") }
     val modes = listOf("Auto (5G/4G/3G)", "4G / LTE Only", "5G Preferred", "5G Only")
+    val defaultMode = when {
+        currentRat == RadioAccessTechnology.NR_SA -> "5G Only"
+        currentRat == RadioAccessTechnology.NR_NSA -> "5G Preferred"
+        currentRat == RadioAccessTechnology.LTE || currentRat == RadioAccessTechnology.LTE_CA -> "4G / LTE Only"
+        else -> "Auto (5G/4G/3G)"
+    }
+    var selectedMode by remember(currentRat) { mutableStateOf(defaultMode) }
 
     Scaffold(
         containerColor = CanvasNavy,
         topBar = {
             TopAppBar(
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(
+                            imageVector = Icons.Default.ArrowBack,
+                            contentDescription = "Back",
+                            tint = TextPrimary
+                        )
+                    }
+                },
                 title = {
                     Text(
                         text = "Network Mode",

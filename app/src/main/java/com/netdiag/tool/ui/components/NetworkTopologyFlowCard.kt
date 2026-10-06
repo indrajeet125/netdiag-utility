@@ -44,6 +44,20 @@ fun NetworkTopologyFlowCard(
 ) {
     // Battery Saver / Live Monitoring State
     var isMonitoringActive by remember { mutableStateOf(true) }
+    var isScreenResumed by remember { mutableStateOf(true) }
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            isScreenResumed = event == androidx.lifecycle.Lifecycle.Event.ON_RESUME
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            isScreenResumed = false
+        }
+    }
+
     var selectedNodeIndex by remember { mutableStateOf<Int?>(null) }
     var gatewayLatencyMs by remember { mutableStateOf<Long?>(null) }
 
@@ -54,9 +68,9 @@ fun NetworkTopologyFlowCard(
     val carrierName = simSub?.info?.carrierName?.takeIf { it.isNotBlank() && it != "Unknown" } ?: if (isWifi) "Broadband ISP" else "Cellular Core"
     val dnsIp = networkState.dns.firstOrNull() ?: "1.1.1.1"
 
-    // Periodic lightweight Gateway ping when monitoring is active
-    LaunchedEffect(isMonitoringActive, gatewayIp, isConnected) {
-        if (isMonitoringActive && isConnected && isWifi && networkState.gateway != null) {
+    // Periodic lightweight Gateway ping when monitoring is active AND screen is visible
+    LaunchedEffect(isMonitoringActive, isScreenResumed, gatewayIp, isConnected) {
+        if (isMonitoringActive && isScreenResumed && isConnected && isWifi && networkState.gateway != null) {
             while (true) {
                 try {
                     val start = System.currentTimeMillis()

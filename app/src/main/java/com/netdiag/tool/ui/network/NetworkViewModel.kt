@@ -55,11 +55,7 @@ class NetworkViewModel @Inject constructor(
     val lastUpdatedMs: StateFlow<Long> = _lastUpdatedMs.asStateFlow()
 
     private var pollingJob: Job? = null
-
-    init {
-        refresh()
-        startLivePolling()
-    }
+    private var isMonitoring = false
 
     fun selectSim(slot: Int) {
         _selectedSimSlot.value = slot
@@ -67,7 +63,9 @@ class NetworkViewModel @Inject constructor(
 
     fun setRefreshRate(rate: LiveRefreshRate) {
         _refreshRate.value = rate
-        startLivePolling()
+        if (isMonitoring) {
+            startLivePolling()
+        }
     }
 
     fun setNeighborSort(sort: NeighborSort) {
@@ -83,10 +81,26 @@ class NetworkViewModel @Inject constructor(
         _lastUpdatedMs.value = System.currentTimeMillis()
     }
 
+    fun startLiveMonitoring() {
+        if (isMonitoring) return
+        isMonitoring = true
+        android.util.Log.d("LIFECYCLE", "[LIFECYCLE] LiveMonitor START")
+        refresh()
+        startLivePolling()
+    }
+
+    fun stopLiveMonitoring() {
+        if (!isMonitoring) return
+        isMonitoring = false
+        android.util.Log.d("LIFECYCLE", "[LIFECYCLE] LiveMonitor STOP")
+        stopLivePolling()
+    }
+
     private fun startLivePolling() {
         pollingJob?.cancel()
         val interval = _refreshRate.value.intervalMs
         if (interval > 0) {
+            android.util.Log.d("COROUTINE", "[COROUTINE] monitor job START (interval=${interval}ms)")
             pollingJob = viewModelScope.launch {
                 while (isActive) {
                     delay(interval)
@@ -96,8 +110,16 @@ class NetworkViewModel @Inject constructor(
         }
     }
 
+    private fun stopLivePolling() {
+        if (pollingJob != null) {
+            android.util.Log.d("COROUTINE", "[COROUTINE] monitor job CANCEL")
+            pollingJob?.cancel()
+            pollingJob = null
+        }
+    }
+
     override fun onCleared() {
         super.onCleared()
-        pollingJob?.cancel()
+        stopLivePolling()
     }
 }
