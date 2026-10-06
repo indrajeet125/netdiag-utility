@@ -19,8 +19,9 @@ data class PingConfiguration(
     val target: String = "google.com",
     val port: Int = 443,
     val count: Int = 10,
-    val timeoutMs: Int = 3000,
-    val intervalMs: Long = 1000L,
+    val timeoutMs: Int = 2000,
+    val intervalMs: Long = 500L,
+    val payloadBytes: Int = 64,
     val networkTarget: NetworkTarget = NetworkTarget.Default
 )
 
@@ -46,6 +47,7 @@ data class PingReport(
     val minMs: Long,
     val avgMs: Double,
     val maxMs: Long,
+    val jitterMs: Double = 0.0,
     val timestamp: Long = System.currentTimeMillis()
 )
 
@@ -143,6 +145,7 @@ data class SimSubscription(
     val dataState: String = "DISCONNECTED",
     val isVoLTE: Boolean = false,
     val isVoWiFi: Boolean = false,
+    val isVoNR: Boolean = false,
     val isImsRegistered: Boolean = false,
     val videoCallingSupported: Boolean = false,
     val signalDbm: Int? = null,

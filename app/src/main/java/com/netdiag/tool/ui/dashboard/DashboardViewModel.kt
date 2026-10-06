@@ -13,7 +13,8 @@ import javax.inject.Inject
 class DashboardViewModel @Inject constructor(
     private val networkRepo: NetworkRepository,
     private val telephonyRepo: TelephonyRepository,
-    private val preferencesRepo: com.netdiag.tool.data.repository.AppPreferencesRepository
+    private val preferencesRepo: com.netdiag.tool.data.repository.AppPreferencesRepository,
+    private val historyRepo: com.netdiag.tool.data.repository.TestHistoryRepository
 ) : ViewModel() {
 
     val networkState: StateFlow<NetworkState> = networkRepo.networkState
@@ -22,6 +23,8 @@ class DashboardViewModel @Inject constructor(
     val currentRat: StateFlow<RadioAccessTechnology> = telephonyRepo.currentRat
     val dashboardCategories: StateFlow<List<com.netdiag.tool.domain.model.DashboardCategory>> = preferencesRepo.dashboardCategories
     val favoriteServices: StateFlow<Set<String>> = preferencesRepo.favoriteServices
+    val oneTapEnabled: StateFlow<Boolean> = preferencesRepo.oneTapEnabled
+    val historyList: StateFlow<List<com.netdiag.tool.data.repository.TestHistoryEntry>> = historyRepo.history
 
     val deviceName: String = "${Build.MANUFACTURER} ${Build.MODEL}"
     val androidVersion: String = "Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})"
@@ -41,5 +44,9 @@ class DashboardViewModel @Inject constructor(
 
     fun toggleFavoriteService(serviceId: String) {
         preferencesRepo.toggleFavoriteService(serviceId)
+    }
+
+    fun setOneTapEnabled(enabled: Boolean) {
+        preferencesRepo.setOneTapEnabled(enabled)
     }
 }

@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.netdiag.tool.domain.model.NetworkState
@@ -475,16 +476,20 @@ fun KeyValueRow(
             style = MaterialTheme.typography.bodySmall.copy(
                 color = TextSecondary,
                 fontSize = 12.sp
-            )
+            ),
+            modifier = Modifier.weight(1f, fill = false)
         )
+        Spacer(modifier = Modifier.width(12.dp))
         Text(
             text = value,
+            textAlign = TextAlign.End,
             style = MaterialTheme.typography.bodyMedium.copy(
                 fontFamily = if (isMonospace) FontFamily.Monospace else FontFamily.Default,
                 color = highlightColor ?: TextPrimary,
                 fontWeight = FontWeight.Medium,
                 fontSize = 13.sp
-            )
+            ),
+            modifier = Modifier.weight(1.6f, fill = false)
         )
     }
 }

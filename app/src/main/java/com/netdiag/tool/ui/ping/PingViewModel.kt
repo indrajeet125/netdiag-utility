@@ -27,7 +27,8 @@ data class PingUiState(
 @HiltViewModel
 class PingViewModel @Inject constructor(
     private val pingRepo: PingRepository,
-    private val pingStrategyFactory: PingStrategyFactory
+    private val pingStrategyFactory: PingStrategyFactory,
+    private val historyRepo: com.netdiag.tool.data.repository.TestHistoryRepository
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(PingUiState())
@@ -63,6 +64,9 @@ class PingViewModel @Inject constructor(
                 val minMs = latencies.minOrNull() ?: 0L
                 val maxMs = latencies.maxOrNull() ?: 0L
                 val avgMs = if (latencies.isNotEmpty()) latencies.average() else 0.0
+                val jitterMs = if (latencies.size > 1) {
+                    latencies.zipWithNext { a, b -> kotlin.math.abs(a - b) }.average()
+                } else 0.0
 
                 val report = PingReport(
                     config = config,
@@ -72,13 +76,28 @@ class PingViewModel @Inject constructor(
                     lossPercent = lossPercent,
                     minMs = minMs,
                     avgMs = avgMs,
-                    maxMs = maxMs
+                    maxMs = maxMs,
+                    jitterMs = jitterMs
                 )
 
                 _state.value = _state.value.copy(
                     isRunning = false,
                     report = report,
                     liveProbes = liveList.toList()
+                )
+
+                // Save to persistent test history
+                historyRepo.addEntry(
+                    com.netdiag.tool.data.repository.TestHistoryEntry(
+                        category = com.netdiag.tool.data.repository.TestCategory.PING,
+                        title = config.type.name,
+                        target = config.target,
+                        networkSummary = "${transmitted} pkts • ${lossPercent.toInt()}% loss",
+                        resultStatus = "${avgMs.toInt()} ms",
+                        latencyMs = avgMs.toLong(),
+                        details = "Min: ${minMs}ms, Max: ${maxMs}ms, Jitter: ${jitterMs.toInt()}ms",
+                        isSuccess = received > 0
+                    )
                 )
             } catch (e: Exception) {
                 _state.value = _state.value.copy(

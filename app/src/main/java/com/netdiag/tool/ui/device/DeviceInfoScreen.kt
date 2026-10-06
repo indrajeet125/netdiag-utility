@@ -8,40 +8,97 @@ import android.os.BatteryManager
 import android.os.Build
 import android.os.Environment
 import android.os.StatFs
+import android.os.SystemClock
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.netdiag.tool.domain.model.CellData
+import com.netdiag.tool.domain.model.RadioAccessTechnology
+import com.netdiag.tool.domain.model.SimSubscription
 import com.netdiag.tool.ui.components.KeyValueRow
+import com.netdiag.tool.ui.dashboard.DashboardViewModel
+import com.netdiag.tool.ui.network.NeighborSort
+import com.netdiag.tool.ui.network.NetworkViewModel
 import com.netdiag.tool.ui.theme.*
-import java.io.File
 import java.util.Locale
+
+enum class DeviceInfoTab(val label: String, val icon: ImageVector) {
+    OVERVIEW("Overview", Icons.Outlined.GridView),
+    SIM1("SIM 1", Icons.Outlined.SimCard),
+    SIM2("SIM 2", Icons.Outlined.SimCard),
+    CELLULAR("Cellular", Icons.Outlined.CellTower),
+    BATTERY("Battery", Icons.Outlined.BatteryChargingFull),
+    HARDWARE("Hardware", Icons.Outlined.DeveloperBoard),
+    SOFTWARE("Software", Icons.Outlined.Android)
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DeviceInfoScreen(
-    onNavigateBack: () -> Unit
+    onNavigateBack: (() -> Unit)? = null,
+    onNavigateToSettings: (() -> Unit)? = null,
+    networkViewModel: NetworkViewModel = hiltViewModel(),
+    dashboardViewModel: DashboardViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
     val scrollState = rememberScrollState()
+
+    var selectedTab by remember { mutableStateOf(DeviceInfoTab.OVERVIEW) }
+
+    val sim1 by networkViewModel.sim1.collectAsState()
+    val sim2 by networkViewModel.sim2.collectAsState()
+    val networkState by dashboardViewModel.networkState.collectAsState()
+    val currentRat by networkViewModel.currentRat.collectAsState()
+    val neighborSort by networkViewModel.neighborSort.collectAsState()
+
+    val activeSim = if (sim1.info.isDefaultData) sim1 else if (sim2.info.isDefaultData) sim2 else sim1
+
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+
+    // Only run live RF/cell monitoring if user is on Cellular/SIM tabs AND screen is visible
+    val needsLiveMonitoring = selectedTab in listOf(DeviceInfoTab.CELLULAR, DeviceInfoTab.SIM1, DeviceInfoTab.SIM2)
+
+    DisposableEffect(lifecycleOwner, needsLiveMonitoring) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME && needsLiveMonitoring) {
+                networkViewModel.startLiveMonitoring()
+            } else if (event == androidx.lifecycle.Lifecycle.Event.ON_PAUSE) {
+                networkViewModel.stopLiveMonitoring()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        if (lifecycleOwner.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED) && needsLiveMonitoring) {
+            networkViewModel.startLiveMonitoring()
+        } else if (!needsLiveMonitoring) {
+            networkViewModel.stopLiveMonitoring()
+        }
+
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            networkViewModel.stopLiveMonitoring()
+        }
+    }
 
     // ── RAM Diagnostics ──
     val memoryInfo = remember {
@@ -50,38 +107,25 @@ fun DeviceInfoScreen(
         am.getMemoryInfo(mi)
         mi
     }
-
-    val totalRamBytes = memoryInfo.totalMem
-    val availRamBytes = memoryInfo.availMem
-    val usedRamBytes = totalRamBytes - availRamBytes
-    val ramUsedPercent = if (totalRamBytes > 0) ((usedRamBytes.toDouble() / totalRamBytes) * 100).toInt() else 0
-
-    val totalRamGb = String.format(Locale.US, "%.2f GB", totalRamBytes / (1024.0 * 1024.0 * 1024.0))
-    val availRamGb = String.format(Locale.US, "%.2f GB", availRamBytes / (1024.0 * 1024.0 * 1024.0))
-    val usedRamGb = String.format(Locale.US, "%.2f GB", usedRamBytes / (1024.0 * 1024.0 * 1024.0))
+    val totalRamGb = String.format(Locale.US, "%.2f GB", memoryInfo.totalMem / (1024.0 * 1024.0 * 1024.0))
+    val availRamGb = String.format(Locale.US, "%.2f GB", memoryInfo.availMem / (1024.0 * 1024.0 * 1024.0))
+    val usedRamGb = String.format(Locale.US, "%.2f GB", (memoryInfo.totalMem - memoryInfo.availMem) / (1024.0 * 1024.0 * 1024.0))
 
     // ── Storage Diagnostics ──
-    val (totalStorageGb, availStorageGb, usedStorageGb, storageUsedPercent) = remember {
+    val (totalStorageGb, availStorageGb, usedStorageGb) = remember {
         try {
             val stat = StatFs(Environment.getDataDirectory().path)
             val blockSize = stat.blockSizeLong
-            val totalBlocks = stat.blockCountLong
-            val availBlocks = stat.availableBlocksLong
-
-            val totalBytes = totalBlocks * blockSize
-            val freeBytes = availBlocks * blockSize
+            val totalBytes = stat.blockCountLong * blockSize
+            val freeBytes = stat.availableBlocksLong * blockSize
             val usedBytes = totalBytes - freeBytes
-
-            val usedPct = if (totalBytes > 0) ((usedBytes.toDouble() / totalBytes) * 100).toInt() else 0
-
-            Tuple4(
+            Triple(
                 String.format(Locale.US, "%.1f GB", totalBytes / (1024.0 * 1024.0 * 1024.0)),
                 String.format(Locale.US, "%.1f GB", freeBytes / (1024.0 * 1024.0 * 1024.0)),
-                String.format(Locale.US, "%.1f GB", usedBytes / (1024.0 * 1024.0 * 1024.0)),
-                usedPct
+                String.format(Locale.US, "%.1f GB", usedBytes / (1024.0 * 1024.0 * 1024.0))
             )
         } catch (_: Exception) {
-            Tuple4("--", "--", "--", 0)
+            Triple("--", "--", "--")
         }
     }
 
@@ -106,16 +150,25 @@ fun DeviceInfoScreen(
     } ?: 32.0
 
     val batteryVoltageMv = batteryIntent?.getIntExtra(BatteryManager.EXTRA_VOLTAGE, 0) ?: 3850
-    val batteryTech = batteryIntent?.getStringExtra(BatteryManager.EXTRA_TECHNOLOGY) ?: "Li-ion"
+    val batteryHealth = batteryIntent?.let {
+        when (it.getIntExtra(BatteryManager.EXTRA_HEALTH, BatteryManager.BATTERY_HEALTH_UNKNOWN)) {
+            BatteryManager.BATTERY_HEALTH_GOOD -> "Good"
+            BatteryManager.BATTERY_HEALTH_OVERHEAT -> "Overheat"
+            BatteryManager.BATTERY_HEALTH_DEAD -> "Dead"
+            BatteryManager.BATTERY_HEALTH_OVER_VOLTAGE -> "Over Voltage"
+            else -> "Normal"
+        }
+    } ?: "Good"
 
     // ── Display Metrics ──
     val displayMetrics = context.resources.displayMetrics
     val screenRes = "${displayMetrics.widthPixels} × ${displayMetrics.heightPixels} px"
     val screenDpi = "${displayMetrics.densityDpi} DPI"
 
-    // ── OS & Hardware ──
-    val cpuCores = Runtime.getRuntime().availableProcessors()
-    val abis = Build.SUPPORTED_ABIS.joinToString(", ")
+    // ── System ──
+    val uptimeHours = SystemClock.elapsedRealtime() / (1000 * 60 * 60)
+    val uptimeMins = (SystemClock.elapsedRealtime() / (1000 * 60)) % 60
+    val uptimeStr = "${uptimeHours}h ${uptimeMins}m"
     val radioVersion = try { Build.getRadioVersion() ?: "Unknown" } catch (_: Exception) { "Unknown" }
     val kernelVersion = System.getProperty("os.version") ?: "Linux"
 
@@ -125,19 +178,32 @@ fun DeviceInfoScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = "Device & Hardware Telemetry",
+                        text = "Device Info",
                         style = MaterialTheme.typography.titleLarge.copy(
                             color = MaterialTheme.colorScheme.onBackground
                         )
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(
-                            imageVector = Icons.Default.ArrowBack,
-                            contentDescription = "Back",
-                            tint = MaterialTheme.colorScheme.onBackground
-                        )
+                    if (onNavigateBack != null) {
+                        IconButton(onClick = onNavigateBack) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back",
+                                tint = MaterialTheme.colorScheme.onBackground
+                            )
+                        }
+                    }
+                },
+                actions = {
+                    if (onNavigateToSettings != null) {
+                        IconButton(onClick = onNavigateToSettings) {
+                            Icon(
+                                imageVector = Icons.Outlined.Settings,
+                                contentDescription = "Settings",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -150,237 +216,608 @@ fun DeviceInfoScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .verticalScroll(scrollState)
-                .padding(horizontal = 20.dp, vertical = 12.dp)
         ) {
-            // ── Device Model Hero Card ──
-            Surface(
-                shape = RoundedCornerShape(14.dp),
-                color = MaterialTheme.colorScheme.surface,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-                modifier = Modifier.fillMaxWidth()
+            // Horizontal Tabs: Overview | SIM 1 | SIM 2 | Cellular | Battery | Hardware | Software
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 6.dp)
             ) {
-                Row(
-                    modifier = Modifier.padding(18.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(48.dp)
-                            .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.PhoneAndroid,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(26.dp)
+                items(DeviceInfoTab.values()) { tab ->
+                    val isSelected = selectedTab == tab
+                    FilterChip(
+                        selected = isSelected,
+                        onClick = { selectedTab = tab },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = tab.icon,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
+                        label = {
+                            Text(
+                                text = tab.label,
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                )
+                            )
+                        },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                            selectedLabelColor = MaterialTheme.colorScheme.primary
+                        )
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(scrollState)
+                    .padding(horizontal = 20.dp, vertical = 8.dp)
+            ) {
+                when (selectedTab) {
+                    DeviceInfoTab.OVERVIEW -> {
+                        OverviewSection(
+                            deviceName = "${Build.MANUFACTURER} ${Build.MODEL}",
+                            androidVersion = "Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})",
+                            ramSummary = "$usedRamGb / $totalRamGb",
+                            storageSummary = "$usedStorageGb / $totalStorageGb",
+                            batterySummary = "$batteryPct% • ${if (isCharging) "Charging" else "Discharging"}",
+                            activeSim = activeSim,
+                            networkState = networkState,
+                            onGoToCellular = { selectedTab = DeviceInfoTab.CELLULAR }
                         )
                     }
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Column {
-                        Text(
-                            text = "${Build.MANUFACTURER.replaceFirstChar { it.uppercase() }} ${Build.MODEL}",
-                            style = MaterialTheme.typography.titleMedium.copy(
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                fontSize = 18.sp
-                            )
+                    DeviceInfoTab.SIM1 -> {
+                        SimDetailsSection(title = "SIM 1 TELEMETRY", sim = sim1)
+                    }
+                    DeviceInfoTab.SIM2 -> {
+                        SimDetailsSection(title = "SIM 2 TELEMETRY", sim = sim2)
+                    }
+                    DeviceInfoTab.CELLULAR -> {
+                        CellularRadioSection(
+                            sim = activeSim,
+                            rat = currentRat,
+                            neighborSort = neighborSort,
+                            onSortChanged = { networkViewModel.setNeighborSort(it) },
+                            onRefresh = { networkViewModel.refresh() }
                         )
-                        Text(
-                            text = "Hardware: ${Build.HARDWARE} • Board: ${Build.BOARD}",
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                    }
+                    DeviceInfoTab.BATTERY -> {
+                        BatterySection(
+                            percent = batteryPct,
+                            isCharging = isCharging,
+                            tempC = batteryTempC,
+                            voltageMv = batteryVoltageMv,
+                            health = batteryHealth
+                        )
+                    }
+                    DeviceInfoTab.HARDWARE -> {
+                        HardwareSection(
+                            screenRes = screenRes,
+                            screenDpi = screenDpi,
+                            cpuCores = Runtime.getRuntime().availableProcessors(),
+                            abis = Build.SUPPORTED_ABIS.joinToString(", "),
+                            ramTotal = totalRamGb,
+                            ramAvail = availRamGb,
+                            storageTotal = totalStorageGb,
+                            storageAvail = availStorageGb
+                        )
+                    }
+                    DeviceInfoTab.SOFTWARE -> {
+                        SoftwareSection(
+                            androidRelease = Build.VERSION.RELEASE,
+                            sdkInt = Build.VERSION.SDK_INT,
+                            buildNumber = Build.DISPLAY,
+                            securityPatch = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) Build.VERSION.SECURITY_PATCH else "N/A",
+                            kernel = kernelVersion,
+                            radio = radioVersion,
+                            uptime = uptimeStr
                         )
                     }
                 }
+
+                Spacer(modifier = Modifier.height(24.dp))
             }
-
-            Spacer(modifier = Modifier.height(18.dp))
-
-            // ── Section 1: Memory (RAM) & Storage ──
-            SectionHeader(title = "SYSTEM MEMORY & STORAGE", icon = Icons.Outlined.Memory)
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    // RAM Progress Bar
-                    UsageProgressRow(
-                        title = "RAM Usage",
-                        usedText = "$usedRamGb / $totalRamGb",
-                        percentage = ramUsedPercent,
-                        color = if (ramUsedPercent > 85) StatusRed else MaterialTheme.colorScheme.primary
-                    )
-
-                    Spacer(modifier = Modifier.height(12.dp))
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outline, thickness = 0.5.dp)
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // Internal Storage Progress Bar
-                    UsageProgressRow(
-                        title = "Internal Storage",
-                        usedText = "$usedStorageGb / $totalStorageGb",
-                        percentage = storageUsedPercent,
-                        color = if (storageUsedPercent > 90) StatusAmber else StatusGreen
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(18.dp))
-
-            // ── Section 2: Android OS & Firmware ──
-            SectionHeader(title = "OPERATING SYSTEM & PLATFORM", icon = Icons.Outlined.Android)
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    KeyValueRow(label = "Android Version", value = "Android ${Build.VERSION.RELEASE}", isMonospace = false)
-                    KeyValueRow(label = "API Level", value = "API ${Build.VERSION.SDK_INT}")
-                    KeyValueRow(label = "Security Patch", value = Build.VERSION.SECURITY_PATCH.ifBlank { "N/A" })
-                    KeyValueRow(label = "Build Number", value = Build.DISPLAY.take(24))
-                    KeyValueRow(label = "Baseband Radio", value = radioVersion.take(24))
-                    KeyValueRow(label = "Kernel Version", value = kernelVersion.take(24))
-                }
-            }
-
-            Spacer(modifier = Modifier.height(18.dp))
-
-            // ── Section 3: Processor & Display ──
-            SectionHeader(title = "PROCESSOR & DISPLAY", icon = Icons.Outlined.DeveloperBoard)
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    KeyValueRow(label = "CPU Cores", value = "$cpuCores Cores Active")
-                    KeyValueRow(label = "Architecture (ABIs)", value = abis)
-                    KeyValueRow(label = "Screen Resolution", value = screenRes)
-                    KeyValueRow(label = "Screen Density", value = screenDpi)
-                }
-            }
-
-            Spacer(modifier = Modifier.height(18.dp))
-
-            // ── Section 4: Battery Telemetry ──
-            SectionHeader(title = "BATTERY TELEMETRY", icon = Icons.Outlined.BatteryChargingFull)
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    KeyValueRow(
-                        label = "Battery Level",
-                        value = "$batteryPct%",
-                        highlightColor = if (batteryPct > 20) StatusGreen else StatusRed
-                    )
-                    KeyValueRow(label = "Charging Status", value = if (isCharging) "Charging (Active)" else "Discharging")
-                    KeyValueRow(label = "Temperature", value = "$batteryTempC °C")
-                    KeyValueRow(label = "Voltage", value = "$batteryVoltageMv mV")
-                    KeyValueRow(label = "Technology", value = batteryTech)
-                }
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
         }
     }
 }
 
 @Composable
-fun SectionHeader(title: String, icon: ImageVector) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(18.dp)
+private fun OverviewSection(
+    deviceName: String,
+    androidVersion: String,
+    ramSummary: String,
+    storageSummary: String,
+    batterySummary: String,
+    activeSim: SimSubscription,
+    networkState: com.netdiag.tool.domain.model.NetworkState,
+    onGoToCellular: () -> Unit
+) {
+    Text(
+        text = "DEVICE TELEMETRY SUMMARY",
+        style = MaterialTheme.typography.titleSmall.copy(
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            letterSpacing = 1.2.sp
         )
+    )
+
+    Spacer(modifier = Modifier.height(10.dp))
+
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            KeyValueRow(label = "Model", value = deviceName, isMonospace = false)
+            KeyValueRow(label = "OS", value = androidVersion, isMonospace = false)
+            KeyValueRow(label = "RAM Used", value = ramSummary)
+            KeyValueRow(label = "Storage Used", value = storageSummary)
+            KeyValueRow(label = "Battery", value = batterySummary, isMonospace = false)
+        }
+    }
+
+    Spacer(modifier = Modifier.height(16.dp))
+
+    Text(
+        text = "ACTIVE NETWORK",
+        style = MaterialTheme.typography.titleSmall.copy(
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            letterSpacing = 1.2.sp
+        )
+    )
+
+    Spacer(modifier = Modifier.height(10.dp))
+
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            KeyValueRow(label = "Transport", value = networkState.transport)
+            KeyValueRow(label = "Carrier", value = activeSim.info.carrierName.ifBlank { "Unknown" }, isMonospace = false)
+            val phoneDisplay = if (!activeSim.info.msisdn.isNullOrBlank()) activeSim.info.msisdn else "Restricted by carrier / SIM"
+            KeyValueRow(label = "Phone Number", value = phoneDisplay, isMonospace = false)
+            KeyValueRow(label = "Data SIM", value = "SIM ${activeSim.info.slotIndex + 1}")
+            KeyValueRow(label = "IPv4 Address", value = networkState.ipv4 ?: "Not assigned")
+            KeyValueRow(label = "Default Gateway", value = networkState.gateway ?: "N/A")
+        }
+    }
+
+    Spacer(modifier = Modifier.height(16.dp))
+
+    val cell = activeSim.servingCell
+    Text(
+        text = "RADIO SIGNAL (2×2 GRID)",
+        style = MaterialTheme.typography.titleSmall.copy(
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            letterSpacing = 1.2.sp
+        )
+    )
+
+    Spacer(modifier = Modifier.height(10.dp))
+
+    Signal2x2Grid(cell = cell)
+
+    Spacer(modifier = Modifier.height(16.dp))
+
+    Button(
+        onClick = onGoToCellular,
+        modifier = Modifier.fillMaxWidth().height(48.dp),
+        shape = RoundedCornerShape(10.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = MaterialTheme.colorScheme.primary,
+            contentColor = MaterialTheme.colorScheme.onPrimary
+        )
+    ) {
+        Icon(Icons.Outlined.CellTower, contentDescription = null, modifier = Modifier.size(18.dp))
         Spacer(modifier = Modifier.width(8.dp))
+        Text("VIEW DETAILED CELLULAR TELEMETRY", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
+    }
+}
+
+@Composable
+fun Signal2x2Grid(cell: CellData?) {
+    val rsrpVal = cell?.ssRsrp ?: cell?.rsrp
+    val rsrqVal = cell?.ssRsrq ?: cell?.rsrq
+    val rssiVal = cell?.rssi
+    val sinrVal = cell?.ssSinr ?: cell?.sinr
+
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                MetricCell(label = "RSRP", value = rsrpVal?.let { "$it dBm" } ?: "N/A", modifier = Modifier.weight(1f))
+                Spacer(modifier = Modifier.width(16.dp))
+                MetricCell(label = "RSRQ", value = rsrqVal?.let { "$it dB" } ?: "N/A", modifier = Modifier.weight(1f))
+            }
+            Spacer(modifier = Modifier.height(14.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline, thickness = 0.5.dp)
+            Spacer(modifier = Modifier.height(14.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                MetricCell(label = "RSSI", value = rssiVal?.let { "$it dBm" } ?: "N/A", modifier = Modifier.weight(1f))
+                Spacer(modifier = Modifier.width(16.dp))
+                MetricCell(label = "SINR", value = sinrVal?.let { "${it.toInt()} dB" } ?: "N/A", modifier = Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+@Composable
+private fun MetricCell(label: String, value: String, modifier: Modifier = Modifier) {
+    Column(modifier = modifier) {
+        Text(text = label, style = MaterialTheme.typography.labelSmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant))
+        Spacer(modifier = Modifier.height(2.dp))
         Text(
-            text = title,
-            style = MaterialTheme.typography.titleSmall.copy(
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            text = value,
+            style = MaterialTheme.typography.bodyLarge.copy(
+                fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Bold,
-                letterSpacing = 1.1.sp,
-                fontSize = 11.sp
+                color = MaterialTheme.colorScheme.onSurface
             )
         )
     }
 }
 
 @Composable
-fun UsageProgressRow(
-    title: String,
-    usedText: String,
-    percentage: Int,
-    color: Color
-) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+private fun SimDetailsSection(title: String, sim: SimSubscription) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.titleSmall.copy(
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            letterSpacing = 1.2.sp
+        )
+    )
+
+    Spacer(modifier = Modifier.height(10.dp))
+
+    if (sim.info.subscriptionId == -1) {
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+            modifier = Modifier.fillMaxWidth()
         ) {
             Text(
-                text = title,
-                style = MaterialTheme.typography.bodyMedium.copy(
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
+                text = "No SIM card inserted or subscription inactive in this slot.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(16.dp),
+                style = MaterialTheme.typography.bodyMedium
             )
-            Row(verticalAlignment = Alignment.CenterVertically) {
+        }
+        return
+    }
+
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            KeyValueRow(label = "Carrier", value = sim.info.carrierName, isMonospace = false)
+            val phoneDisplay = if (!sim.info.msisdn.isNullOrBlank()) sim.info.msisdn else "Restricted by carrier / SIM"
+            KeyValueRow(label = "Phone Number", value = phoneDisplay, isMonospace = false)
+            KeyValueRow(label = "MCC / MNC", value = "${sim.info.mcc ?: "N/A"} / ${sim.info.mnc ?: "N/A"}")
+            KeyValueRow(label = "PLMN", value = sim.info.plmn ?: "N/A")
+            KeyValueRow(label = "Registration", value = sim.registrationState)
+            KeyValueRow(label = "Roaming", value = if (sim.info.isRoaming) "Roaming" else "Home")
+            KeyValueRow(label = "Default Data SIM", value = if (sim.info.isDefaultData) "Yes" else "No")
+            KeyValueRow(label = "RAT", value = sim.rat.label)
+            KeyValueRow(label = "IMS Registered", value = if (sim.isImsRegistered) "Registered ✓" else "Not Registered")
+            KeyValueRow(label = "VoLTE Available", value = if (sim.isVoLTE) "Available ✓" else "Unavailable")
+            KeyValueRow(label = "VoWiFi Available", value = if (sim.isVoWiFi) "Available ✓" else "Unavailable")
+        }
+    }
+
+    Spacer(modifier = Modifier.height(16.dp))
+
+    Text(
+        text = "SERVING CELL",
+        style = MaterialTheme.typography.titleSmall.copy(
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            letterSpacing = 1.2.sp
+        )
+    )
+
+    Spacer(modifier = Modifier.height(10.dp))
+
+    val cell = sim.servingCell
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            KeyValueRow(label = "PCI", value = cell?.pci?.toString() ?: "N/A")
+            KeyValueRow(label = "TAC", value = cell?.tac?.toString() ?: "N/A")
+            KeyValueRow(label = "Cell ID", value = cell?.cellId?.toString() ?: "N/A")
+            KeyValueRow(label = "Band", value = cell?.band ?: "N/A")
+            KeyValueRow(label = "EARFCN / ARFCN", value = cell?.arfcn?.toString() ?: "N/A")
+            KeyValueRow(label = "Bandwidth", value = cell?.bandwidthKhz?.let { "${it / 1000} MHz" } ?: "N/A")
+            KeyValueRow(label = "Timing Advance", value = cell?.timingAdvance?.let { "$it ($it steps)" } ?: "N/A")
+        }
+    }
+}
+
+@Composable
+private fun CellularRadioSection(
+    sim: SimSubscription,
+    rat: RadioAccessTechnology,
+    neighborSort: NeighborSort,
+    onSortChanged: (NeighborSort) -> Unit,
+    onRefresh: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = "LIVE RF METRICS (${rat.label})",
+            style = MaterialTheme.typography.titleSmall.copy(
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                letterSpacing = 1.2.sp
+            )
+        )
+        IconButton(onClick = onRefresh, modifier = Modifier.size(28.dp)) {
+            Icon(Icons.Outlined.Refresh, contentDescription = "Refresh", tint = MaterialTheme.colorScheme.primary)
+        }
+    }
+
+    Spacer(modifier = Modifier.height(10.dp))
+
+    Signal2x2Grid(cell = sim.servingCell)
+
+    Spacer(modifier = Modifier.height(16.dp))
+
+    Text(
+        text = "SERVING CELL & CARRIERS",
+        style = MaterialTheme.typography.titleSmall.copy(
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            letterSpacing = 1.2.sp
+        )
+    )
+
+    Spacer(modifier = Modifier.height(10.dp))
+
+    val cell = sim.servingCell
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            KeyValueRow(label = "5G Architecture", value = sim.nsaMode ?: (if (rat == RadioAccessTechnology.NR_SA) "Standalone SA" else "N/A"))
+            KeyValueRow(label = "Primary Band", value = cell?.band ?: "N/A")
+            KeyValueRow(label = "Physical Cell ID (PCI)", value = cell?.pci?.toString() ?: "N/A")
+            KeyValueRow(label = "Tracking Area Code (TAC)", value = cell?.tac?.toString() ?: "N/A")
+            KeyValueRow(label = "Cell Identity (ECI/NCI)", value = cell?.cellId?.toString() ?: "N/A")
+            KeyValueRow(label = "eNodeB / gNodeB ID", value = cell?.enbId?.toString() ?: "N/A")
+            KeyValueRow(label = "Sector ID", value = cell?.sectorId?.toString() ?: "N/A")
+            KeyValueRow(label = "ARFCN / EARFCN", value = cell?.arfcn?.toString() ?: "N/A")
+        }
+    }
+
+    Spacer(modifier = Modifier.height(16.dp))
+
+    // Neighbour Cells
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = "NEIGHBOUR CELLS (${sim.neighborCells.size})",
+            style = MaterialTheme.typography.titleSmall.copy(
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                letterSpacing = 1.2.sp
+            )
+        )
+
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            NeighborSort.values().forEach { sort ->
+                val isSel = neighborSort == sort
                 Text(
-                    text = usedText,
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 11.5.sp
-                    )
+                    text = sort.label,
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        color = if (isSel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
+                        fontSize = 10.sp
+                    ),
+                    modifier = Modifier.clickable { onSortChanged(sort) }.padding(horizontal = 4.dp, vertical = 2.dp)
                 )
-                Spacer(modifier = Modifier.width(8.dp))
-                Surface(
-                    shape = RoundedCornerShape(4.dp),
-                    color = color.copy(alpha = 0.15f)
+            }
+        }
+    }
+
+    Spacer(modifier = Modifier.height(8.dp))
+
+    if (sim.neighborCells.isEmpty()) {
+        Surface(
+            shape = RoundedCornerShape(10.dp),
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                text = "No neighbour cells reported by modem. Modem may restrict neighbour scanning to conserve battery.",
+                style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                modifier = Modifier.padding(14.dp)
+            )
+        }
+    } else {
+        sim.neighborCells.take(15).forEach { n ->
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = MaterialTheme.colorScheme.surface,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp).fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer
+                        ) {
+                            Text(
+                                text = n.rat.shortLabel,
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.Bold
+                                ),
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = "PCI ${n.pci ?: "--"} • ${n.band ?: (n.arfcn?.let { "CH $it" } ?: "")}",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace)
+                        )
+                    }
+
                     Text(
-                        text = "$percentage%",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontWeight = FontWeight.Bold,
-                            color = color,
+                        text = "${n.ssRsrp ?: n.rsrp ?: n.rssi ?: "--"} dBm",
+                        style = MaterialTheme.typography.bodySmall.copy(
                             fontFamily = FontFamily.Monospace,
-                            fontSize = 10.sp
-                        ),
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
                     )
                 }
             }
         }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        LinearProgressIndicator(
-            progress = { (percentage / 100f).coerceIn(0f, 1f) },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(8.dp)
-                .clip(RoundedCornerShape(4.dp)),
-            color = color,
-            trackColor = MaterialTheme.colorScheme.surface
-        )
     }
 }
 
-private data class Tuple4<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
+@Composable
+private fun BatterySection(
+    percent: Int,
+    isCharging: Boolean,
+    tempC: Double,
+    voltageMv: Int,
+    health: String
+) {
+    Text(
+        text = "BATTERY TELEMETRY",
+        style = MaterialTheme.typography.titleSmall.copy(
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            letterSpacing = 1.2.sp
+        )
+    )
+
+    Spacer(modifier = Modifier.height(10.dp))
+
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            KeyValueRow(label = "Battery Level", value = "$percent%")
+            KeyValueRow(label = "Charging State", value = if (isCharging) "Charging" else "Discharging", isMonospace = false)
+            KeyValueRow(label = "Temperature", value = String.format(Locale.US, "%.1f °C", tempC))
+            KeyValueRow(label = "Voltage", value = "$voltageMv mV")
+            KeyValueRow(label = "Health", value = health, isMonospace = false)
+        }
+    }
+}
+
+@Composable
+private fun HardwareSection(
+    screenRes: String,
+    screenDpi: String,
+    cpuCores: Int,
+    abis: String,
+    ramTotal: String,
+    ramAvail: String,
+    storageTotal: String,
+    storageAvail: String
+) {
+    Text(
+        text = "HARDWARE & DISPLAY",
+        style = MaterialTheme.typography.titleSmall.copy(
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            letterSpacing = 1.2.sp
+        )
+    )
+
+    Spacer(modifier = Modifier.height(10.dp))
+
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            KeyValueRow(label = "Screen Resolution", value = screenRes)
+            KeyValueRow(label = "Screen Density", value = screenDpi)
+            KeyValueRow(label = "CPU Cores", value = "$cpuCores Cores")
+            KeyValueRow(label = "Architecture (ABIs)", value = abis, isMonospace = false)
+            KeyValueRow(label = "Total RAM", value = ramTotal)
+            KeyValueRow(label = "Available RAM", value = ramAvail)
+            KeyValueRow(label = "Total Storage", value = storageTotal)
+            KeyValueRow(label = "Available Storage", value = storageAvail)
+        }
+    }
+}
+
+@Composable
+private fun SoftwareSection(
+    androidRelease: String,
+    sdkInt: Int,
+    buildNumber: String,
+    securityPatch: String,
+    kernel: String,
+    radio: String,
+    uptime: String
+) {
+    Text(
+        text = "SOFTWARE & SYSTEM",
+        style = MaterialTheme.typography.titleSmall.copy(
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            letterSpacing = 1.2.sp
+        )
+    )
+
+    Spacer(modifier = Modifier.height(10.dp))
+
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            KeyValueRow(label = "Android Version", value = androidRelease)
+            KeyValueRow(label = "API / SDK Level", value = sdkInt.toString())
+            KeyValueRow(label = "Build Number", value = buildNumber, isMonospace = false)
+            KeyValueRow(label = "Security Patch", value = securityPatch)
+            KeyValueRow(label = "Kernel Version", value = kernel, isMonospace = false)
+            KeyValueRow(label = "Baseband Radio", value = radio, isMonospace = false)
+            KeyValueRow(label = "System Uptime", value = uptime, isMonospace = false)
+        }
+    }
+}

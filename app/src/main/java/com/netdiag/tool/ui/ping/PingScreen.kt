@@ -39,6 +39,11 @@ fun PingScreen(
     var targetInput by remember { mutableStateOf(state.config.target) }
     var showSettingsDialog by remember { mutableStateOf(false) }
 
+    var attemptCount by remember { mutableStateOf(10) }
+    var payloadBytes by remember { mutableStateOf(64) }
+    var timeoutSec by remember { mutableStateOf("2") }
+    var intervalMs by remember { mutableStateOf("500") }
+
     LaunchedEffect(selectedTab) {
         viewModel.updateConfig(state.config.copy(type = selectedTab))
     }
@@ -48,13 +53,13 @@ fun PingScreen(
     val isRunning = state.isRunning
 
     Scaffold(
-        containerColor = CanvasNavy,
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
                 title = {
                     Text(
                         text = "Ping Diagnostics",
-                        style = MaterialTheme.typography.titleLarge.copy(color = TextPrimary)
+                        style = MaterialTheme.typography.titleLarge.copy(color = MaterialTheme.colorScheme.onBackground)
                     )
                 },
                 actions = {
@@ -62,38 +67,38 @@ fun PingScreen(
                         Icon(
                             imageVector = Icons.Outlined.Tune,
                             contentDescription = "Config",
-                            tint = TextSecondary
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = CanvasNavy)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
             )
         },
         bottomBar = {
             Surface(
-                color = SurfaceBase,
-                border = BorderStroke(1.dp, BorderSubtle),
+                color = MaterialTheme.colorScheme.surface,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 16.dp)
+                        .padding(horizontal = 20.dp, vertical = 14.dp)
                 ) {
                     if (isRunning) {
                         Button(
                             onClick = { viewModel.stopPing() },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(52.dp),
+                                .height(50.dp),
                             shape = RoundedCornerShape(10.dp),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = StatusRed,
-                                contentColor = CanvasNavy
+                                contentColor = MaterialTheme.colorScheme.surface
                             )
                         ) {
                             Text(
-                                text = "Stop",
+                                text = "STOP TEST",
                                 style = MaterialTheme.typography.labelLarge.copy(
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 15.sp
@@ -106,22 +111,26 @@ fun PingScreen(
                                 viewModel.updateConfig(
                                     state.config.copy(
                                         target = targetInput.trim().ifEmpty { "google.com" },
-                                        type = selectedTab
+                                        type = selectedTab,
+                                        count = attemptCount,
+                                        payloadBytes = payloadBytes,
+                                        timeoutMs = (timeoutSec.toIntOrNull() ?: 2) * 1000,
+                                        intervalMs = intervalMs.toLongOrNull() ?: 500L
                                     )
                                 )
                                 viewModel.startPing()
                             },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(52.dp),
+                                .height(50.dp),
                             shape = RoundedCornerShape(10.dp),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = AccentCyan,
-                                contentColor = CanvasNavy
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary
                             )
                         ) {
                             Text(
-                                text = if (report != null) "Test again" else "Start test",
+                                text = if (report != null) "START TEST AGAIN" else "START TEST",
                                 style = MaterialTheme.typography.labelLarge.copy(
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 15.sp
@@ -142,10 +151,10 @@ fun PingScreen(
             item {
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Segmented Tabs: HTTP / TCP
+                // Segmented Tabs: HTTP / TCP / ICMP
                 Surface(
                     shape = RoundedCornerShape(8.dp),
-                    color = SurfaceElevated,
+                    color = MaterialTheme.colorScheme.surfaceVariant,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
@@ -153,14 +162,18 @@ fun PingScreen(
                             .fillMaxWidth()
                             .padding(4.dp)
                     ) {
-                        val tabs = listOf(PingType.HTTP to "HTTP PING", PingType.TCP to "TCP SOCKET")
+                        val tabs = listOf(
+                            PingType.HTTP to "HTTP",
+                            PingType.TCP to "TCP",
+                            PingType.ICMP to "ICMP"
+                        )
                         tabs.forEach { (type, label) ->
                             val isSelected = selectedTab == type
                             Box(
                                 modifier = Modifier
                                     .weight(1f)
                                     .background(
-                                        if (isSelected) SurfaceHighlight else SurfaceElevated,
+                                        if (isSelected) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.surfaceVariant,
                                         RoundedCornerShape(6.dp)
                                     )
                                     .clickable { selectedTab = type }
@@ -170,7 +183,7 @@ fun PingScreen(
                                 Text(
                                     text = label,
                                     style = MaterialTheme.typography.labelMedium.copy(
-                                        color = if (isSelected) AccentCyan else TextSecondary,
+                                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                                         fontWeight = FontWeight.Bold
                                     )
                                 )
@@ -179,25 +192,86 @@ fun PingScreen(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
                 // Target Input Field
                 OutlinedTextField(
                     value = targetInput,
                     onValueChange = { targetInput = it },
-                    label = { Text("Target Host / URL", style = MaterialTheme.typography.bodySmall) },
+                    label = { Text("Target Host / Domain", style = MaterialTheme.typography.bodySmall) },
+                    placeholder = { Text("google.com") },
                     singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = AccentCyan,
-                        unfocusedBorderColor = BorderSubtle,
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary,
-                        cursorColor = AccentCyan
-                    ),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp)
                 )
 
-                Spacer(modifier = Modifier.height(20.dp))
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Attempts / Requests Chips
+                Text(
+                    text = if (selectedTab == PingType.HTTP) "REQUESTS" else "ATTEMPTS",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        letterSpacing = 1.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                androidx.compose.foundation.lazy.LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    val attemptOptions = listOf(5, 10, 20, 50, 100, 9999)
+                    items(attemptOptions.size) { idx ->
+                        val count = attemptOptions[idx]
+                        val label = if (count == 9999) "Continuous" else "$count"
+                        val isSelected = attemptCount == count
+                        FilterChip(
+                            selected = isSelected,
+                            onClick = { attemptCount = count },
+                            label = { Text(label, style = MaterialTheme.typography.labelSmall) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                selectedLabelColor = MaterialTheme.colorScheme.primary
+                            )
+                        )
+                    }
+                }
+
+                // ICMP Payload Chips (Only for ICMP)
+                if (selectedTab == PingType.ICMP) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = "ICMP PAYLOAD",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            letterSpacing = 1.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    androidx.compose.foundation.lazy.LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        val payloadOptions = listOf(32, 64, 128, 256, 512, 1024, 1400)
+                        items(payloadOptions.size) { idx ->
+                            val bytes = payloadOptions[idx]
+                            val isSelected = payloadBytes == bytes
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = { payloadBytes = bytes },
+                                label = { Text("$bytes B", style = MaterialTheme.typography.labelSmall) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                    selectedLabelColor = MaterialTheme.colorScheme.primary
+                                )
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
             }
 
             // Live Diagnostic Telemetry Hero
@@ -261,6 +335,7 @@ fun PingScreen(
                                 MetricChip(label = "AVG", value = "$avgLatency ms")
                                 MetricChip(label = "MAX", value = "$maxLatency ms")
                                 MetricChip(label = "LOSS", value = "${lossPercent.toInt()}%")
+                                MetricChip(label = "JITTER", value = "${report?.jitterMs?.toInt() ?: 0} ms")
                             }
                         }
                     }

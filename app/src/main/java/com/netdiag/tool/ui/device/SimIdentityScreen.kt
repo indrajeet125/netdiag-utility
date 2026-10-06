@@ -353,3 +353,24 @@ fun maskValue(value: String?, prefixCount: Int = 4, suffixCount: Int = 2): Strin
     val suffix = value.takeLast(suffixCount)
     return "$prefix •••••••• $suffix"
 }
+
+@Composable
+private fun SectionHeader(title: String, icon: androidx.compose.ui.graphics.vector.ImageVector) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(18.dp)
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleSmall.copy(
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                letterSpacing = 1.2.sp
+            )
+        )
+    }
+}
+

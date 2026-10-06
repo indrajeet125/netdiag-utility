@@ -77,6 +77,7 @@ class TelephonyRepository @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
     private val telephonyManager = context.getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
+    private val subscriptionManager = context.getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE) as? SubscriptionManager
 
     private val _sim1 = MutableStateFlow(SimSubscription())
     val sim1: StateFlow<SimSubscription> = _sim1.asStateFlow()
@@ -103,15 +104,21 @@ class TelephonyRepository @Inject constructor(
                 else if (index == 1) _sim2.value = sub
             }
 
-            // Current RAT from active subscription
-            val rat = mapNetworkType(telephonyManager.dataNetworkType)
-            _currentRat.value = rat
-            _sim1.value = _sim1.value.copy(rat = if (subs.isNotEmpty()) rat else RadioAccessTechnology.UNKNOWN)
+            // Current RAT from active subscription or detected serving cell
+            val detectedRat = if (_sim1.value.servingCell?.rat != null && _sim1.value.servingCell?.rat != RadioAccessTechnology.UNKNOWN) {
+                _sim1.value.servingCell!!.rat
+            } else {
+                mapNetworkType(telephonyManager.dataNetworkType)
+            }
+            _currentRat.value = detectedRat
+            if (_sim1.value.rat == RadioAccessTechnology.UNKNOWN) {
+                _sim1.value = _sim1.value.copy(rat = detectedRat)
+            }
 
             // Network mode info
             _networkMode.value = NetworkModeInfo(
                 currentMode = "Auto",
-                observedRat = rat,
+                observedRat = detectedRat,
                 canChange = false,
                 restrictionReason = "Normal app privileges - MODIFY_PHONE_STATE or carrier privileges required",
                 availableModes = listOf("Auto", "4G/3G/2G", "4G Only", "5G Preferred", "5G Only")
@@ -136,7 +143,27 @@ class TelephonyRepository @Inject constructor(
             iccId = try { subTm.simSerialNumber?.takeIf { it.isNotBlank() } } catch (_: Exception) { null }
         }
 
-        var msisdn: String? = try { subInfo.number?.takeIf { it.isNotBlank() } } catch (_: Exception) { null }
+        var msisdn: String? = null
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            try {
+                // Priority order: IMS (used by Jio/Airtel for VoNR/VoLTE), Carrier, UICC (SIM hardware)
+                val sources = intArrayOf(
+                    android.telephony.SubscriptionManager.PHONE_NUMBER_SOURCE_IMS,
+                    android.telephony.SubscriptionManager.PHONE_NUMBER_SOURCE_CARRIER,
+                    android.telephony.SubscriptionManager.PHONE_NUMBER_SOURCE_UICC
+                )
+                for (source in sources) {
+                    val num: String? = subscriptionManager?.getPhoneNumber(subInfo.subscriptionId, source)
+                    if (!num.isNullOrBlank()) {
+                        msisdn = num
+                        break
+                    }
+                }
+            } catch (_: Exception) { }
+        }
+        if (msisdn.isNullOrBlank()) {
+            msisdn = try { subInfo.number?.takeIf { it.isNotBlank() } } catch (_: Exception) { null }
+        }
         if (msisdn.isNullOrBlank()) {
             msisdn = try { subTm.line1Number?.takeIf { it.isNotBlank() } } catch (_: Exception) { null }
         }
@@ -171,11 +198,16 @@ class TelephonyRepository @Inject constructor(
         var signalDbm: Int? = null
 
         try {
-            val cellInfoList = subTm.allCellInfo ?: emptyList()
+            val cellInfoList = subTm.allCellInfo ?: telephonyManager.allCellInfo ?: emptyList()
             for (ci in cellInfoList) {
                 val cellData = parseCellInfo(ci)
                 if (cellData != null) {
-                    if (ci.isRegistered) {
+                    val isCandidateServing = ci.isRegistered ||
+                        (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
+                         (ci.cellConnectionStatus == CellInfo.CONNECTION_PRIMARY_SERVING ||
+                          ci.cellConnectionStatus == CellInfo.CONNECTION_SECONDARY_SERVING))
+
+                    if (isCandidateServing) {
                         if (servingCell == null) {
                             servingCell = cellData.copy(isServing = true)
                             signalDbm = cellData.rsrp ?: cellData.ssRsrp ?: cellData.rssi
@@ -188,6 +220,120 @@ class TelephonyRepository @Inject constructor(
                 }
             }
         } catch (_: SecurityException) { }
+
+        // Fallback: If no cell was marked registered, promote the best candidate from neighbor cells
+        if (servingCell == null && neighborCells.isNotEmpty()) {
+            val bestCell = neighborCells.find { it.connectionStatus == "PRIMARY_SERVING" }
+                ?: neighborCells.maxByOrNull { it.rsrp ?: it.ssRsrp ?: it.rssi ?: -999 }
+                ?: neighborCells.first()
+            servingCell = bestCell.copy(isServing = true)
+            neighborCells.remove(bestCell)
+            signalDbm = servingCell.rsrp ?: servingCell.ssRsrp ?: servingCell.rssi
+        }
+
+        // Direct SignalStrength fallback (Always available without GPS location permissions)
+        try {
+            val sigStrength = subTm.signalStrength ?: telephonyManager.signalStrength
+            if (sigStrength != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                for (css in sigStrength.cellSignalStrengths) {
+                    when (css) {
+                        is CellSignalStrengthNr -> {
+                            val nrSsRsrp = css.ssRsrp.takeIf { it != Int.MAX_VALUE && it < 0 }
+                            val nrSsRsrq = css.ssRsrq.takeIf { it != Int.MAX_VALUE }
+                            val nrSsSinr = css.ssSinr.takeIf { it != Int.MAX_VALUE }?.toDouble()
+                            val nrCsiRsrp = css.csiRsrp.takeIf { it != Int.MAX_VALUE && it < 0 }
+                            val nrCsiRsrq = css.csiRsrq.takeIf { it != Int.MAX_VALUE }
+                            val nrCsiSinr = css.csiSinr.takeIf { it != Int.MAX_VALUE }?.toDouble()
+                            val bestRsrp = nrSsRsrp ?: nrCsiRsrp
+                            val bestRsrq = nrSsRsrq ?: nrCsiRsrq
+                            val bestSinr = nrSsSinr ?: nrCsiSinr
+
+                            if (servingCell == null) {
+                                servingCell = CellData(
+                                    rat = RadioAccessTechnology.NR_SA,
+                                    rsrp = bestRsrp,
+                                    rsrq = bestRsrq,
+                                    sinr = bestSinr,
+                                    ssRsrp = nrSsRsrp,
+                                    ssRsrq = nrSsRsrq,
+                                    ssSinr = nrSsSinr,
+                                    csiRsrp = nrCsiRsrp,
+                                    csiRsrq = nrCsiRsrq,
+                                    csiSinr = nrCsiSinr,
+                                    signalLevel = css.level,
+                                    isServing = true
+                                )
+                            } else {
+                                servingCell = servingCell.copy(
+                                    rsrp = servingCell.rsrp ?: bestRsrp,
+                                    rsrq = servingCell.rsrq ?: bestRsrq,
+                                    sinr = servingCell.sinr ?: bestSinr,
+                                    ssRsrp = servingCell.ssRsrp ?: nrSsRsrp,
+                                    ssRsrq = servingCell.ssRsrq ?: nrSsRsrq,
+                                    ssSinr = servingCell.ssSinr ?: nrSsSinr,
+                                    csiRsrp = servingCell.csiRsrp ?: nrCsiRsrp,
+                                    csiRsrq = servingCell.csiRsrq ?: nrCsiRsrq,
+                                    csiSinr = servingCell.csiSinr ?: nrCsiSinr,
+                                    signalLevel = if (servingCell.signalLevel == 0) css.level else servingCell.signalLevel
+                                )
+                            }
+                            if (signalDbm == null && bestRsrp != null) signalDbm = bestRsrp
+                        }
+                        is CellSignalStrengthLte -> {
+                            val lteRsrp = css.rsrp.takeIf { it != Int.MAX_VALUE && it < 0 }
+                            val lteRsrq = css.rsrq.takeIf { it != Int.MAX_VALUE }
+                            val lteSinr = css.rssnr.takeIf { it != Int.MAX_VALUE }?.toDouble()
+                            val lteRssi = css.rssi.takeIf { it != Int.MAX_VALUE }
+                            val lteTa = css.timingAdvance.takeIf { it != Int.MAX_VALUE && it >= 0 }
+                            val lteCqi = css.cqi.takeIf { it != Int.MAX_VALUE }
+
+                            if (servingCell == null) {
+                                servingCell = CellData(
+                                    rat = RadioAccessTechnology.LTE,
+                                    rsrp = lteRsrp,
+                                    rsrq = lteRsrq,
+                                    sinr = lteSinr,
+                                    rssi = lteRssi,
+                                    timingAdvance = lteTa,
+                                    cqi = lteCqi,
+                                    signalLevel = css.level,
+                                    isServing = true
+                                )
+                            } else {
+                                servingCell = servingCell.copy(
+                                    rsrp = servingCell.rsrp ?: lteRsrp,
+                                    rsrq = servingCell.rsrq ?: lteRsrq,
+                                    sinr = servingCell.sinr ?: lteSinr,
+                                    rssi = servingCell.rssi ?: lteRssi,
+                                    timingAdvance = servingCell.timingAdvance ?: lteTa,
+                                    cqi = servingCell.cqi ?: lteCqi,
+                                    signalLevel = if (servingCell.signalLevel == 0) css.level else servingCell.signalLevel
+                                )
+                            }
+                            if (signalDbm == null && lteRsrp != null) signalDbm = lteRsrp
+                        }
+                        is CellSignalStrengthWcdma -> {
+                            val rscp = css.dbm.takeIf { it != Int.MAX_VALUE && it < 0 }
+                            if (servingCell == null) {
+                                servingCell = CellData(rat = RadioAccessTechnology.UMTS, rscp = rscp, rssi = rscp, signalLevel = css.level, isServing = true)
+                            } else {
+                                servingCell = servingCell.copy(rscp = servingCell.rscp ?: rscp, rssi = servingCell.rssi ?: rscp)
+                            }
+                            if (signalDbm == null && rscp != null) signalDbm = rscp
+                        }
+                        is CellSignalStrengthGsm -> {
+                            val rssi = css.dbm.takeIf { it != Int.MAX_VALUE && it < 0 }
+                            if (servingCell == null) {
+                                servingCell = CellData(rat = RadioAccessTechnology.EDGE, rssi = rssi, signalLevel = css.level, isServing = true)
+                            } else {
+                                servingCell = servingCell.copy(rssi = servingCell.rssi ?: rssi)
+                            }
+                            if (signalDbm == null && rssi != null) signalDbm = rssi
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) { }
 
         val dataState = when (subTm.dataState) {
             TelephonyManager.DATA_CONNECTED -> "CONNECTED"
@@ -213,22 +359,46 @@ class TelephonyRepository @Inject constructor(
             }
         }
 
-        // IMS / VoLTE / VoWiFi
+        // IMS / VoLTE / VoNR / VoWiFi
         var isVoLTE = false
+        var isVoNR = false
         var isVoWiFi = false
         var isIms = false
         try {
             val networkType = subTm.networkType
             val dataNetType = subTm.dataNetworkType
-            if (networkType == TelephonyManager.NETWORK_TYPE_LTE || dataNetType == TelephonyManager.NETWORK_TYPE_LTE || rat == RadioAccessTechnology.LTE || rat == RadioAccessTechnology.NR_NSA) {
+            val is5G = rat == RadioAccessTechnology.NR_SA || rat == RadioAccessTechnology.NR_NSA ||
+                    networkType == TelephonyManager.NETWORK_TYPE_NR || dataNetType == TelephonyManager.NETWORK_TYPE_NR
+            val is4G = rat == RadioAccessTechnology.LTE || networkType == TelephonyManager.NETWORK_TYPE_LTE || dataNetType == TelephonyManager.NETWORK_TYPE_LTE
+
+            if (is5G) {
+                isVoNR = true
+                isVoLTE = true
+                isIms = true
+            } else if (is4G || simInfo.carrierName.contains("Jio", ignoreCase = true)) {
                 isVoLTE = true
                 isIms = true
             }
+
             if (dataNetType == TelephonyManager.NETWORK_TYPE_IWLAN) {
                 isVoWiFi = true
                 isIms = true
             }
         } catch (_: Exception) { }
+
+        // Comprehensive registration detection:
+        // A device is registered if a serving cell is detected, or telephony serviceState is IN_SERVICE,
+        // or mobile data is connected, or active RAT is known.
+        val isInService = try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                subTm.serviceState?.state == android.telephony.ServiceState.STATE_IN_SERVICE
+            } else {
+                subTm.networkType != TelephonyManager.NETWORK_TYPE_UNKNOWN
+            }
+        } catch (_: Exception) {
+            false
+        }
+        val isRegistered = servingCell != null || isInService || dataState == "CONNECTED" || rat != RadioAccessTechnology.UNKNOWN
 
         return SimSubscription(
             info = simInfo,
@@ -236,10 +406,11 @@ class TelephonyRepository @Inject constructor(
             servingCell = servingCell,
             secondaryServingCell = secondaryServingCell,
             neighborCells = neighborCells.sortedByDescending { it.rsrp ?: it.ssRsrp ?: it.rssi ?: -999 },
-            registrationState = if (servingCell != null) "REGISTERED" else "NOT REGISTERED",
+            registrationState = if (isRegistered) "REGISTERED" else "NOT REGISTERED",
             dataState = dataState,
             isVoLTE = isVoLTE,
             isVoWiFi = isVoWiFi,
+            isVoNR = isVoNR,
             isImsRegistered = isIms,
             videoCallingSupported = isIms,
             signalDbm = signalDbm,
@@ -308,6 +479,10 @@ class TelephonyRepository @Inject constructor(
                     }
                 } else null
 
+                val ssRsrpVal = ss.ssRsrp.takeIf { it != Int.MAX_VALUE && it < 0 } ?: ss.csiRsrp.takeIf { it != Int.MAX_VALUE && it < 0 }
+                val ssRsrqVal = ss.ssRsrq.takeIf { it != Int.MAX_VALUE } ?: ss.csiRsrq.takeIf { it != Int.MAX_VALUE }
+                val ssSinrVal = ss.ssSinr.takeIf { it != Int.MAX_VALUE }?.toDouble() ?: ss.csiSinr.takeIf { it != Int.MAX_VALUE }?.toDouble()
+
                 CellData(
                     rat = RadioAccessTechnology.NR_SA,
                     pci = id.pci.takeIf { it != Int.MAX_VALUE },
@@ -317,6 +492,9 @@ class TelephonyRepository @Inject constructor(
                     sectorId = sector,
                     arfcn = nrarfcn,
                     band = RadioBandUtils.calculateNrBand(nrarfcn),
+                    rsrp = ssRsrpVal,
+                    rsrq = ssRsrqVal,
+                    sinr = ssSinrVal,
                     ssRsrp = ss.ssRsrp.takeIf { it != Int.MAX_VALUE },
                     ssRsrq = ss.ssRsrq.takeIf { it != Int.MAX_VALUE },
                     ssSinr = ss.ssSinr.takeIf { it != Int.MAX_VALUE }?.toDouble(),
@@ -574,7 +752,13 @@ class PingRepository @Inject constructor(
     private fun doIcmpProbe(seq: Int, config: PingConfiguration): SinglePingProbe {
         val start = System.currentTimeMillis()
         try {
-            val process = ProcessBuilder("ping", "-c", "1", "-W", (config.timeoutMs / 1000).coerceAtLeast(1).toString(), config.target)
+            val process = ProcessBuilder(
+                "ping",
+                "-c", "1",
+                "-s", config.payloadBytes.toString(),
+                "-W", (config.timeoutMs / 1000).coerceAtLeast(1).toString(),
+                config.target
+            )
                 .redirectErrorStream(true)
                 .start()
             val output = process.inputStream.bufferedReader().readText()
@@ -605,6 +789,9 @@ class PingRepository @Inject constructor(
         val received = successful.size
         val loss = if (probes.isEmpty()) 0f else ((probes.size - received).toFloat() / probes.size * 100f)
         val latencies = successful.map { it.totalTimeMs }
+        val jitter = if (latencies.size > 1) {
+            latencies.zipWithNext { a, b -> kotlin.math.abs(a - b) }.average()
+        } else 0.0
 
         return PingReport(
             config = config,
@@ -614,7 +801,8 @@ class PingRepository @Inject constructor(
             lossPercent = loss,
             minMs = latencies.minOrNull() ?: 0,
             avgMs = if (latencies.isEmpty()) 0.0 else latencies.average(),
-            maxMs = latencies.maxOrNull() ?: 0
+            maxMs = latencies.maxOrNull() ?: 0,
+            jitterMs = jitter
         )
     }
 }
