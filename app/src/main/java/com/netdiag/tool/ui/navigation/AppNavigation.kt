@@ -38,14 +38,14 @@ import kotlinx.coroutines.launch
 sealed class BottomDestination(val route: String, val label: String, val icon: ImageVector) {
     object Home : BottomDestination("home", "Home", Icons.Outlined.Home)
     object Tests : BottomDestination("tests", "Tests", Icons.Outlined.Speed)
-    object Network : BottomDestination("network", "Network", Icons.Outlined.CellTower)
+    object DeviceInfo : BottomDestination("device_info", "Device Info", Icons.Outlined.PhoneAndroid)
     object Tools : BottomDestination("tools", "Tools", Icons.Outlined.Build)
 }
 
 val primaryBottomItems = listOf(
     BottomDestination.Home,
     BottomDestination.Tests,
-    BottomDestination.Network,
+    BottomDestination.DeviceInfo,
     BottomDestination.Tools
 )
 
@@ -76,7 +76,7 @@ fun AppNavigation(
     val onboardingViewModel: OnboardingViewModel = hiltViewModel()
 
     // Show bottom bar only on the 4 primary destinations
-    val showBottomBar = currentRoute in listOf("home", "tests", "network", "tools")
+    val showBottomBar = currentRoute in listOf("home", "tests", "device_info", "tools") || currentRoute?.startsWith("tests?") == true
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -226,6 +226,24 @@ fun AppNavigation(
                     }
                 )
                 DrawerItem(
+                    label = "IP Information",
+                    icon = Icons.Outlined.Public,
+                    isSelected = currentRoute == "ip_info",
+                    onClick = {
+                        coroutineScope.launch { drawerState.close() }
+                        navController.navigate("ip_info") { launchSingleTop = true }
+                    }
+                )
+                DrawerItem(
+                    label = "Subnet Calculator",
+                    icon = Icons.Outlined.Calculate,
+                    isSelected = currentRoute == "subnet_calculator",
+                    onClick = {
+                        coroutineScope.launch { drawerState.close() }
+                        navController.navigate("subnet_calculator") { launchSingleTop = true }
+                    }
+                )
+                DrawerItem(
                     label = "Settings",
                     icon = Icons.Outlined.Settings,
                     isSelected = currentRoute == "settings",
@@ -247,7 +265,11 @@ fun AppNavigation(
                         tonalElevation = 0.dp
                     ) {
                         primaryBottomItems.forEach { destination ->
-                            val isSelected = currentRoute == destination.route
+                            val isSelected = if (destination.route == "tests") {
+                                currentRoute == "tests" || currentRoute?.startsWith("tests?") == true
+                            } else {
+                                currentRoute == destination.route
+                            }
 
                             NavigationBarItem(
                                 selected = isSelected,
@@ -292,14 +314,18 @@ fun AppNavigation(
             ) {
                 // ── Onboarding Journey ──
                 composable("splash") {
+                    val isFirst = !isOnboardingDone
+                    android.util.Log.d("Onboarding", "[Onboarding] startup state = ${if (isFirst) "first_launch" else "completed"}")
                     SplashScreen(
-                        isFirstLaunch = !isOnboardingDone,
-                        onNavigateNext = { isFirst ->
-                            if (isFirst) {
+                        isFirstLaunch = isFirst,
+                        onNavigateNext = { firstLaunch ->
+                            if (firstLaunch) {
+                                android.util.Log.d("Onboarding", "[Onboarding] Showing Overview")
                                 navController.navigate("welcome") {
                                     popUpTo("splash") { inclusive = true }
                                 }
                             } else {
+                                android.util.Log.d("Onboarding", "[Onboarding] Overview hidden")
                                 navController.navigate("home") {
                                     popUpTo("splash") { inclusive = true }
                                 }
@@ -311,21 +337,37 @@ fun AppNavigation(
                 composable("welcome") {
                     WelcomeScreen(
                         onGetStarted = { navController.navigate("onboarding_slides") },
-                        onSkip = { navController.navigate("permission_checklist") }
+                        onSkip = {
+                            onboardingViewModel.completeOnboarding()
+                            navController.navigate("home") {
+                                popUpTo("welcome") { inclusive = true }
+                            }
+                        }
                     )
                 }
 
                 composable("onboarding_slides") {
                     FeatureSlidesScreen(
                         onFinished = { navController.navigate("permission_checklist") },
-                        onSkip = { navController.navigate("permission_checklist") }
+                        onSkip = {
+                            onboardingViewModel.completeOnboarding()
+                            navController.navigate("home") {
+                                popUpTo("welcome") { inclusive = true }
+                            }
+                        }
                     )
                 }
 
                 composable("permission_checklist") {
                     PermissionChecklistScreen(
                         viewModel = onboardingViewModel,
-                        onContinue = { navController.navigate("onetap_setup") }
+                        onContinue = { navController.navigate("onetap_setup") },
+                        onSkip = {
+                            onboardingViewModel.completeOnboarding()
+                            navController.navigate("home") {
+                                popUpTo("welcome") { inclusive = true }
+                            }
+                        }
                     )
                 }
 
@@ -333,7 +375,12 @@ fun AppNavigation(
                     OneTapSetupScreen(
                         viewModel = onboardingViewModel,
                         onContinue = { navController.navigate("setup_complete") },
-                        onSkip = { navController.navigate("setup_complete") }
+                        onSkip = {
+                            onboardingViewModel.completeOnboarding()
+                            navController.navigate("home") {
+                                popUpTo("welcome") { inclusive = true }
+                            }
+                        }
                     )
                 }
 
@@ -382,6 +429,8 @@ fun AppNavigation(
                         onNavigateToOneTap = { navController.navigate("onetap_setup") },
                         onNavigateToNetworkMode = { navController.navigate("network_mode") },
                         onNavigateToCacheCleaner = { navController.navigate("cache_cleaner") },
+                        onNavigateToIpInfo = { navController.navigate("ip_info") },
+                        onNavigateToSubnetCalculator = { navController.navigate("subnet_calculator") },
                         onNavigateToSettings = { navController.navigate("settings") },
                         preferencesRepository = preferencesRepository
                     )
@@ -423,7 +472,8 @@ fun AppNavigation(
 
                 composable("device_info") {
                     com.netdiag.tool.ui.device.DeviceInfoScreen(
-                        onNavigateBack = { navController.popBackStack() }
+                        onNavigateBack = null,
+                        onNavigateToSettings = { navController.navigate("settings") }
                     )
                 }
 
@@ -439,8 +489,22 @@ fun AppNavigation(
                     )
                 }
 
+                composable("ip_info") {
+                    com.netdiag.tool.ui.tools.IpInfoScreen(
+                        onNavigateBack = { navController.popBackStack() }
+                    )
+                }
+
+                composable("subnet_calculator") {
+                    com.netdiag.tool.ui.tools.SubnetCalculatorScreen(
+                        onNavigateBack = { navController.popBackStack() }
+                    )
+                }
+
                 composable("network_mode") {
-                    NetworkModeScreen()
+                    NetworkModeScreen(
+                        onNavigateBack = { navController.popBackStack() }
+                    )
                 }
 
                 composable("settings") {
