@@ -11,11 +11,13 @@ enum class ClearCapability {
 
 enum class CleanupStatus {
     SUCCESS,
+    PARTIAL,
     UNSUPPORTED,
     PERMISSION_REQUIRED,
     SKIPPED,
     FAILED,
-    ALREADY_CLEAN
+    ALREADY_CLEAN,
+    CANCELLED
 }
 
 data class AppStorageInfo(
@@ -55,3 +57,32 @@ data class StorageSpaceSummary(
     val freeBytes: Long = 0L,
     val usedBytes: Long = 0L
 )
+
+enum class BatchCleanupStep {
+    IDLE,
+    PREPARING,
+    CLEANING_APP,
+    WAITING_FOR_RESULT,
+    RESULT_RECEIVED,
+    NEXT_APP,
+    COMPLETE,
+    CANCELLED
+}
+
+data class BatchCleanupSession(
+    val step: BatchCleanupStep = BatchCleanupStep.IDLE,
+    val queue: List<AppStorageInfo> = emptyList(),
+    val currentIndex: Int = 0,
+    val currentPackageName: String? = null,
+    val currentBeforeCacheBytes: Long = 0L,
+    val results: List<CacheCleanupResult> = emptyList(),
+    val totalBytesFreed: Long = 0L,
+    val isCancelled: Boolean = false
+) {
+    val currentApp: AppStorageInfo?
+        get() = queue.getOrNull(currentIndex)
+    val totalApps: Int
+        get() = queue.size
+    val isRunning: Boolean
+        get() = step != BatchCleanupStep.IDLE && step != BatchCleanupStep.COMPLETE && step != BatchCleanupStep.CANCELLED
+}

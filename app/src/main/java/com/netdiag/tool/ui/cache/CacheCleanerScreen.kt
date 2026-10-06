@@ -7,6 +7,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -44,35 +45,59 @@ fun CacheCleanerScreen(
     val storageSummary by viewModel.storageSummary.collectAsState()
     val scanSummary by viewModel.scanSummary.collectAsState()
     val appList by viewModel.appList.collectAsState()
+    val selectedPackages by viewModel.selectedPackages.collectAsState()
+    val searchQuery by viewModel.searchQuery.collectAsState()
     val hasUsageAccess by viewModel.hasUsageAccess.collectAsState()
     val sortOption by viewModel.sortOption.collectAsState()
     val filterOption by viewModel.filterOption.collectAsState()
     val selectedDetailApp by viewModel.selectedDetailApp.collectAsState()
+    val isCleaning by viewModel.isCleaning.collectAsState()
+    val lastCleanResult by viewModel.lastCleanResult.collectAsState()
 
     var showClearConfirmation by remember { mutableStateOf(false) }
     var isClearAllConfirmed by remember { mutableStateOf(false) }
     var showSortMenu by remember { mutableStateOf(false) }
+    var showAccessibilityPrompt by remember { mutableStateOf(false) }
+
+    val batchSession by viewModel.batchSession.collectAsState()
+    val context = LocalContext.current
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 viewModel.refreshUsageAccess()
                 viewModel.refreshStorageSpace()
+                viewModel.onAppReturnedFromSettings()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    // Filter and Sort List
-    val filteredList = remember(appList, filterOption, sortOption) {
-        var result = when (filterOption) {
-            CacheFilterOption.ALL -> appList
-            CacheFilterOption.LARGE_CACHE -> appList.filter { it.cacheSize >= 10 * 1024 * 1024 }
-            CacheFilterOption.SELECTED -> appList.filter { it.isSelected }
-            CacheFilterOption.IGNORED -> appList.filter { it.isIgnored }
+    // Step 1: All Apps -> Step 2: Search -> Step 3: Size / Status Filter -> Step 4: Sort
+    val filteredList = remember(appList, searchQuery, filterOption, sortOption, selectedPackages) {
+        // Step 1: All Apps
+        var result = appList
+
+        // Step 2: Search (by App name or Package name, case-insensitive)
+        val q = searchQuery.trim()
+        if (q.isNotEmpty()) {
+            result = result.filter {
+                it.appName.contains(q, ignoreCase = true) || it.packageName.contains(q, ignoreCase = true)
+            }
         }
 
+        // Step 3: Size / Status Filter
+        result = when (filterOption) {
+            CacheFilterOption.ALL -> result
+            CacheFilterOption.OVER_10_MB -> result.filter { it.cacheSize >= 10L * 1024 * 1024 }
+            CacheFilterOption.OVER_50_MB -> result.filter { it.cacheSize >= 50L * 1024 * 1024 }
+            CacheFilterOption.OVER_100_MB -> result.filter { it.cacheSize >= 100L * 1024 * 1024 }
+            CacheFilterOption.SELECTED -> result.filter { selectedPackages.contains(it.packageName) }
+            CacheFilterOption.IGNORED -> result.filter { it.isIgnored }
+        }
+
+        // Step 4: Sort
         result = when (sortOption) {
             CacheSortOption.CACHE_SIZE -> result.sortedByDescending { it.cacheSize }
             CacheSortOption.APP_NAME -> result.sortedBy { it.appName.lowercase() }
@@ -81,7 +106,10 @@ fun CacheCleanerScreen(
         result
     }
 
-    val selectedApps = appList.filter { it.isSelected && !it.isIgnored }
+    // Persistent Selection across ALL apps (not just currently filtered/searched)
+    val selectedApps = remember(appList, selectedPackages) {
+        appList.filter { selectedPackages.contains(it.packageName) && !it.isIgnored }
+    }
     val selectedCacheBytes = selectedApps.sumOf { it.cacheSize }
 
     Scaffold(
@@ -198,7 +226,7 @@ fun CacheCleanerScreen(
                             )
                         ) {
                             Text(
-                                text = "Clear cache",
+                                text = "Clean Selected",
                                 style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
                             )
                         }
@@ -383,7 +411,70 @@ fun CacheCleanerScreen(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(14.dp))
+                // Quick Direct Clean & Result Banner
+                if (lastCleanResult != null) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = StatusGreenBg,
+                        border = BorderStroke(1.dp, StatusGreen.copy(alpha = 0.5f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("✓", color = StatusGreen, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = lastCleanResult ?: "",
+                                    style = MaterialTheme.typography.bodySmall.copy(
+                                        color = StatusGreen,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                )
+                            }
+                            IconButton(onClick = { viewModel.clearResults() }, modifier = Modifier.size(20.dp)) {
+                                Text("✕", color = StatusGreen, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Button(
+                    onClick = { viewModel.cleanDirectDeviceCache() },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    enabled = !isCleaning,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    )
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.CleaningServices,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = if (isCleaning) "Cleaning Cache Files..." else "⚡ Clean App & System Cache",
+                        style = MaterialTheme.typography.labelLarge.copy(
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.5.sp
+                        )
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
 
                 // Scan & Batch Clean Buttons
                 Row(
@@ -391,7 +482,7 @@ fun CacheCleanerScreen(
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     OutlinedButton(
-                        onClick = { viewModel.scanInstalledApps() },
+                        onClick = { viewModel.scanInstalledApps(force = true) },
                         modifier = Modifier
                             .weight(1f)
                             .height(44.dp),
@@ -433,12 +524,58 @@ fun CacheCleanerScreen(
 
                 Spacer(modifier = Modifier.height(18.dp))
 
+                // Search Bar
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { viewModel.setSearchQuery(it) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(54.dp),
+                    placeholder = {
+                        Text(
+                            text = "Search installed apps...",
+                            style = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        )
+                    },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Outlined.Search,
+                            contentDescription = "Search",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { viewModel.setSearchQuery("") }) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Clear search",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                    },
+                    singleLine = true,
+                    shape = RoundedCornerShape(10.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = MaterialTheme.colorScheme.surface,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                    )
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
                 // Filter Chips Row
-                Row(
+                LazyRow(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(horizontal = 2.dp)
                 ) {
-                    CacheFilterOption.values().forEach { filter ->
+                    items(CacheFilterOption.values()) { filter ->
                         val isSelected = filterOption == filter
                         FilterChip(
                             selected = isSelected,
@@ -469,11 +606,11 @@ fun CacheCleanerScreen(
                 Spacer(modifier = Modifier.height(14.dp))
             }
 
-            // Select All / Deselect All Control Bar
+            // Select All / Deselect All Control Bar (Applies to CURRENTLY VISIBLE filtered/search results)
             if (filteredList.isNotEmpty()) {
                 val nonIgnoredFiltered = filteredList.filter { !it.isIgnored }
-                val allFilteredSelected = nonIgnoredFiltered.isNotEmpty() && nonIgnoredFiltered.all { it.isSelected }
-                val selectedCount = nonIgnoredFiltered.count { it.isSelected }
+                val allFilteredSelected = nonIgnoredFiltered.isNotEmpty() && nonIgnoredFiltered.all { selectedPackages.contains(it.packageName) }
+                val visibleSelectedCount = nonIgnoredFiltered.count { selectedPackages.contains(it.packageName) }
 
                 item {
                     Surface(
@@ -511,7 +648,7 @@ fun CacheCleanerScreen(
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Column {
                                     Text(
-                                        text = if (allFilteredSelected) "Deselect All" else "Select All",
+                                        text = if (allFilteredSelected) "Deselect Visible" else "Select Visible",
                                         style = MaterialTheme.typography.titleSmall.copy(
                                             fontWeight = FontWeight.Bold,
                                             color = MaterialTheme.colorScheme.onSurface,
@@ -519,7 +656,11 @@ fun CacheCleanerScreen(
                                         )
                                     )
                                     Text(
-                                        text = "$selectedCount of ${filteredList.size} apps selected",
+                                        text = if (searchQuery.isNotEmpty()) {
+                                            "${filteredList.size} results • $visibleSelectedCount selected"
+                                        } else {
+                                            "$visibleSelectedCount of ${filteredList.size} apps selected"
+                                        },
                                         style = MaterialTheme.typography.bodySmall.copy(
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             fontSize = 11.sp
@@ -553,7 +694,7 @@ fun CacheCleanerScreen(
                                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
                                 ) {
                                     Text(
-                                        text = "Deselect All",
+                                        text = "Clear Selection",
                                         style = MaterialTheme.typography.labelSmall.copy(
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             fontWeight = FontWeight.Medium
@@ -570,17 +711,21 @@ fun CacheCleanerScreen(
             if (filteredList.isEmpty()) {
                 item {
                     EmptyState(
-                        icon = Icons.Outlined.CleaningServices,
-                        title = "No Unnecessary Cache Found",
-                        description = "Your installed applications currently report little or no removable cache.",
-                        actionLabel = "Scan again",
-                        onAction = { viewModel.scanInstalledApps() }
+                        icon = if (searchQuery.isNotEmpty()) Icons.Outlined.SearchOff else Icons.Outlined.CleaningServices,
+                        title = if (searchQuery.isNotEmpty()) "No matching apps found" else "No Unnecessary Cache Found",
+                        description = if (searchQuery.isNotEmpty()) "No applications matched '$searchQuery'. Try a different search term or clear the search." else "Your installed applications currently report little or no removable cache.",
+                        actionLabel = if (searchQuery.isNotEmpty()) "Clear search" else "Scan again",
+                        onAction = {
+                            if (searchQuery.isNotEmpty()) viewModel.setSearchQuery("") else viewModel.scanInstalledApps()
+                        }
                     )
                 }
             } else {
                 items(filteredList, key = { it.packageName }) { app ->
+                    val isAppSelected = selectedPackages.contains(app.packageName) && !app.isIgnored
                     AppCacheItemRow(
                         app = app,
+                        isSelected = isAppSelected,
                         onToggleSelect = { viewModel.toggleAppSelection(app.packageName) },
                         onClick = { viewModel.selectDetailApp(app) }
                     )
@@ -763,9 +908,18 @@ fun CacheCleanerScreen(
                 Button(
                     onClick = {
                         showClearConfirmation = false
-                        // Launch system details for the first app as part of assisted flow
-                        val firstApp = if (isClearAllConfirmed) appList.firstOrNull { it.cacheSize > 0 && !it.isIgnored } else selectedApps.firstOrNull()
-                        firstApp?.let { viewModel.openAppSystemSettings(it.packageName) }
+                        val targets = if (isClearAllConfirmed) {
+                            appList.filter { it.cacheSize > 0 && !it.isIgnored }
+                        } else {
+                            selectedApps
+                        }
+                        val hasAutomatedTargets = targets.any { it.clearCapability == ClearCapability.ACCESSIBILITY_AUTOMATED }
+                        val isA11yEnabled = com.netdiag.tool.ui.onboarding.PermissionChecker.isAccessibilityEnabled(context)
+                        if (hasAutomatedTargets && !isA11yEnabled) {
+                            showAccessibilityPrompt = true
+                        } else {
+                            viewModel.startBatchCleanup(targets)
+                        }
                     },
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.primary,
@@ -783,18 +937,285 @@ fun CacheCleanerScreen(
             containerColor = MaterialTheme.colorScheme.surfaceVariant
         )
     }
+
+    // ── Accessibility Permission Required Dialog ──
+    if (showAccessibilityPrompt) {
+        AlertDialog(
+            onDismissRequest = { showAccessibilityPrompt = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = StatusAmber,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text("Accessibility Service Needed", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
+                }
+            },
+            text = {
+                Column {
+                    Text(
+                        text = "Automated cache cleaning requires the 'OneTap Utility' Accessibility Service to navigate Android Settings and click 'Clear cache' on your behalf without manual intervention.",
+                        style = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface)
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = "Tap 'Enable Service' below, locate 'OneTap Utility' under Downloaded apps/services, and switch it ON.",
+                        style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showAccessibilityPrompt = false
+                        try {
+                            val intent = android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+                                flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+                            }
+                            context.startActivity(intent)
+                        } catch (_: Exception) { }
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    )
+                ) {
+                    Text("Enable Service")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showAccessibilityPrompt = false
+                    // Fallback: Proceed with manual settings flow
+                    val targets = if (isClearAllConfirmed) {
+                        appList.filter { it.cacheSize > 0 && !it.isIgnored }
+                    } else {
+                        selectedApps
+                    }
+                    viewModel.startBatchCleanup(targets)
+                }) {
+                    Text("Proceed Manually", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            },
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    }
+
+    // ── Batch Progress Dialog ──
+    if (batchSession.isRunning) {
+        val currentApp = batchSession.currentApp
+        AlertDialog(
+            onDismissRequest = { /* Modal during active batch */ },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.5.dp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = "Cleaning (${batchSession.currentIndex + 1} / ${batchSession.totalApps})",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                    )
+                }
+            },
+            text = {
+                Column {
+                    if (currentApp != null) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            currentApp.appIcon?.let { icon ->
+                                Image(
+                                    bitmap = icon.toBitmap(64, 64).asImageBitmap(),
+                                    contentDescription = null,
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(6.dp))
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                            }
+                            Column {
+                                Text(
+                                    text = currentApp.appName,
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                                    maxLines = 1
+                                )
+                                Text(
+                                    text = "Target: ${CacheViewModel.formatBytes(batchSession.currentBeforeCacheBytes.takeIf { it > 0 } ?: currentApp.cacheSize)}",
+                                    style = MaterialTheme.typography.bodySmall.copy(
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    val progressFraction = if (batchSession.totalApps > 0) {
+                        batchSession.currentIndex.toFloat() / batchSession.totalApps.toFloat()
+                    } else 0f
+
+                    LinearProgressIndicator(
+                        progress = { progressFraction },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(6.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                        strokeCap = androidx.compose.ui.graphics.StrokeCap.Round
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Text(
+                        text = when (batchSession.step) {
+                            BatchCleanupStep.PREPARING -> "Preparing batch queue..."
+                            BatchCleanupStep.CLEANING_APP, BatchCleanupStep.WAITING_FOR_RESULT -> "Opening settings & executing cache purge..."
+                            BatchCleanupStep.RESULT_RECEIVED -> "Verifying cleared cache bytes..."
+                            BatchCleanupStep.NEXT_APP -> "Advancing to next application..."
+                            else -> "Processing..."
+                        },
+                        style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    )
+                }
+            },
+            confirmButton = {
+                OutlinedButton(
+                    onClick = { viewModel.cancelBatchCleanup() },
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Cancel Batch")
+                }
+            },
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    }
+
+    // ── Batch Summary Modal ──
+    if (batchSession.step == BatchCleanupStep.COMPLETE || batchSession.step == BatchCleanupStep.CANCELLED) {
+        val successCount = batchSession.results.count { it.status == CleanupStatus.SUCCESS || it.status == CleanupStatus.ALREADY_CLEAN }
+        val partialCount = batchSession.results.count { it.status == CleanupStatus.PARTIAL }
+        val unsupportedCount = batchSession.results.count { it.status == CleanupStatus.UNSUPPORTED }
+        val failedCount = batchSession.results.count { it.status == CleanupStatus.FAILED || it.status == CleanupStatus.SKIPPED }
+        val cancelledCount = batchSession.results.count { it.status == CleanupStatus.CANCELLED }
+
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissBatchResults() },
+            title = {
+                Text(
+                    text = if (batchSession.step == BatchCleanupStep.CANCELLED) "Cleanup Interrupted" else "Cleanup Complete",
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                )
+            },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "Released: ${CacheViewModel.formatBytes(batchSession.totalBytesFreed)}",
+                        style = MaterialTheme.typography.titleLarge.copy(
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text(
+                        text = "Success: $successCount • Partial: $partialCount • Unsupported: $unsupportedCount • Skipped: $failedCount" + if (cancelledCount > 0) " • Cancelled: $cancelledCount" else "",
+                        style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline, thickness = 0.5.dp)
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 240.dp)
+                    ) {
+                        items(batchSession.results) { res ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text(
+                                        text = when (res.status) {
+                                            CleanupStatus.SUCCESS, CleanupStatus.ALREADY_CLEAN -> "✓"
+                                            CleanupStatus.PARTIAL -> "⚠"
+                                            CleanupStatus.UNSUPPORTED -> "⊘"
+                                            CleanupStatus.CANCELLED -> "✕"
+                                            else -> "•"
+                                        },
+                                        color = when (res.status) {
+                                            CleanupStatus.SUCCESS, CleanupStatus.ALREADY_CLEAN -> StatusGreen
+                                            CleanupStatus.PARTIAL -> StatusAmber
+                                            CleanupStatus.CANCELLED, CleanupStatus.FAILED -> StatusRed
+                                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                        },
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = res.appName,
+                                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                                        maxLines = 1
+                                    )
+                                }
+
+                                Text(
+                                    text = if (res.bytesReleased > 0) CacheViewModel.formatBytes(res.bytesReleased) else res.status.name,
+                                    style = MaterialTheme.typography.bodySmall.copy(
+                                        fontFamily = FontFamily.Monospace,
+                                        color = if (res.bytesReleased > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontSize = 11.5.sp
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { viewModel.dismissBatchResults() },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    )
+                ) {
+                    Text("Done")
+                }
+            },
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    }
 }
 
 @Composable
 fun AppCacheItemRow(
     app: AppStorageInfo,
+    isSelected: Boolean,
     onToggleSelect: () -> Unit,
     onClick: () -> Unit
 ) {
     Surface(
         shape = RoundedCornerShape(10.dp),
         color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, if (app.isSelected && !app.isIgnored) MaterialTheme.colorScheme.primary.copy(alpha = 0.4f) else MaterialTheme.colorScheme.outline),
+        border = BorderStroke(1.dp, if (isSelected && !app.isIgnored) MaterialTheme.colorScheme.primary.copy(alpha = 0.4f) else MaterialTheme.colorScheme.outline),
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onClick() }
@@ -806,7 +1227,7 @@ fun AppCacheItemRow(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Checkbox(
-                checked = app.isSelected && !app.isIgnored,
+                checked = isSelected && !app.isIgnored,
                 onCheckedChange = { onToggleSelect() },
                 colors = CheckboxDefaults.colors(
                     checkedColor = MaterialTheme.colorScheme.primary,
@@ -846,6 +1267,18 @@ fun AppCacheItemRow(
                         )
                     }
                 }
+
+                Spacer(modifier = Modifier.height(2.dp))
+
+                Text(
+                    text = app.packageName,
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        fontSize = 10.sp
+                    ),
+                    maxLines = 1
+                )
 
                 Spacer(modifier = Modifier.height(2.dp))
 
