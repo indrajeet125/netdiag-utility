@@ -20,6 +20,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavType
+import androidx.navigation.navArgument
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -235,8 +237,20 @@ fun AppNavigation(
                     )
                 }
 
-                composable("tests") {
+                // Optional ?tab= lets Home deep-link into Checkup / History; plain "tests" still matches
+                composable(
+                    route = "tests?tab={tab}",
+                    arguments = listOf(navArgument("tab") {
+                        type = NavType.StringType
+                        nullable = true
+                        defaultValue = null
+                    })
+                ) { entry ->
+                    val tab = entry.arguments?.getString("tab")
+                        ?.let { name -> TestTab.values().firstOrNull { it.name == name } }
+                        ?: TestTab.PING
                     TestsScreen(
+                        initialTab = tab,
                         onOpenSettings = { navController.navigate("settings") }
                     )
                 }

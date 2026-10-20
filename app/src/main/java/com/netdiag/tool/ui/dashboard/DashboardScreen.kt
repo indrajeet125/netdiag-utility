@@ -232,7 +232,7 @@ fun DashboardScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "DASHBOARD OVERVIEW",
+                    text = "OVERVIEW",
                     style = MaterialTheme.typography.titleSmall.copy(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         letterSpacing = 1.2.sp
@@ -270,86 +270,31 @@ fun DashboardScreen(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // ── Primary Network Summary Card ──
-            NetworkStatusCard(
-                networkState = networkState,
-                simSub = activeSim.takeIf { it.info.subscriptionId != -1 },
-                onDetailsClick = onNavigateToNetwork
-            )
+            // ── Primary action: one obvious first step for every user ──
+            Button(
+                onClick = { onNavigateToRoute("tests?tab=CHECKUP") },
+                modifier = Modifier.fillMaxWidth().height(56.dp),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                )
+            ) {
+                Icon(imageVector = Icons.Outlined.NetworkCheck, contentDescription = null, modifier = Modifier.size(22.dp))
+                Spacer(modifier = Modifier.width(10.dp))
+                Text("Check my connection", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
+            }
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // ── Quick Actions Grid (Ping, Checkup, Speed Test, Network) ──
+            // ── Secondary shortcuts ──
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Button(
-                    onClick = { onNavigateToPing("http") },
-                    modifier = Modifier.weight(1f).height(46.dp),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer,
-                        contentColor = MaterialTheme.colorScheme.primary
-                    ),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f))
-                ) {
-                    Icon(imageVector = Icons.Outlined.Speed, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Quick Ping", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
-                }
-
-                Button(
-                    onClick = { onNavigateToRoute("tests?tab=CHECKUP") },
-                    modifier = Modifier.weight(1f).height(46.dp),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        contentColor = MaterialTheme.colorScheme.onSurface
-                    ),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-                ) {
-                    Icon(imageVector = Icons.Outlined.NetworkCheck, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Checkup", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Button(
-                    onClick = { onNavigateToRoute("speed_test") },
-                    modifier = Modifier.weight(1f).height(44.dp),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.surface,
-                        contentColor = MaterialTheme.colorScheme.onSurface
-                    ),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-                ) {
-                    Icon(imageVector = Icons.Outlined.Speed, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Speed Test", style = MaterialTheme.typography.labelMedium)
-                }
-
-                Button(
-                    onClick = onNavigateToNetwork,
-                    modifier = Modifier.weight(1f).height(44.dp),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.surface,
-                        contentColor = MaterialTheme.colorScheme.onSurface
-                    ),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-                ) {
-                    Icon(imageVector = Icons.Outlined.CellTower, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Network Info", style = MaterialTheme.typography.labelMedium)
-                }
+                HomeShortcut(Icons.Outlined.Speed, "Speed test", Modifier.weight(1f)) { onNavigateToRoute("tests?tab=SPEED") }
+                HomeShortcut(Icons.Outlined.NetworkPing, "Ping", Modifier.weight(1f)) { onNavigateToRoute("tests?tab=PING") }
+                HomeShortcut(Icons.Outlined.CellTower, "Signal", Modifier.weight(1f), onNavigateToNetwork)
             }
 
             Spacer(modifier = Modifier.height(14.dp))
@@ -357,7 +302,6 @@ fun DashboardScreen(
             // ── Recent Test Card ──
             val historyList by viewModel.historyList.collectAsState()
             val latestTest = historyList.firstOrNull()
-            val oneTapActive by viewModel.oneTapEnabled.collectAsState()
 
             Surface(
                 shape = RoundedCornerShape(12.dp),
@@ -440,7 +384,7 @@ fun DashboardScreen(
                         }
                     } else {
                         Text(
-                            text = "No tests run yet. Run a Quick Ping or Checkup above.",
+                            text = "No tests yet. Tap \"Check my connection\" above to start.",
                             style = MaterialTheme.typography.bodySmall.copy(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -449,62 +393,6 @@ fun DashboardScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // ── OneTap Status Card ──
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.surface,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp).fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.clickable { onNavigateToOneTap() }
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(34.dp)
-                                .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Outlined.TouchApp,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column {
-                            Text(
-                                text = "OneTap Floating Utility",
-                                style = MaterialTheme.typography.titleMedium.copy(
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.5.sp,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            )
-                            Text(
-                                text = if (oneTapActive) "Enabled & Active ✓" else "Disabled (Tap to setup)",
-                                style = MaterialTheme.typography.bodySmall.copy(
-                                    color = if (oneTapActive) StatusGreen else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontSize = 11.5.sp
-                                )
-                            )
-                        }
-                    }
-                    Switch(
-                        checked = oneTapActive,
-                        onCheckedChange = { viewModel.setOneTapEnabled(it) }
-                    )
-                }
-            }
 
             Spacer(modifier = Modifier.height(16.dp))
 
@@ -551,7 +439,7 @@ fun DashboardScreen(
                     DashboardCategory.HEALTH_CHECKUP -> {
                         ConnectionHealthCard(
                             networkState = networkState,
-                            onRunCheck = { viewModel.refresh() }
+                            onRunCheck = { onNavigateToRoute("tests?tab=CHECKUP") }
                         )
                     }
                     DashboardCategory.QUICK_ACTIONS -> {
@@ -624,5 +512,31 @@ fun DashboardScreen(
             },
             onDismiss = { showSearchRunner = false }
         )
+    }
+}
+
+@Composable
+private fun HomeShortcut(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        modifier = modifier
+            .height(72.dp)
+            .clickable { onClick() }
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Icon(imageVector = icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurface)
+        }
     }
 }
