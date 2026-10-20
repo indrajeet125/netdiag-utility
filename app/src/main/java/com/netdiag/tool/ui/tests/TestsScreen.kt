@@ -44,13 +44,14 @@ import java.net.Socket
 import java.net.URL
 import javax.net.ssl.HttpsURLConnection
 
+// Declaration order = tab order: everyday tests first, advanced network tools after
 enum class TestTab(val label: String) {
-    PING("Ping"),
     SPEED("Speed Test"),
-    PORT("Port"),
-    WEB("Web"),
-    CHECKUP("Checkup"),
+    PING("Ping"),
+    CHECKUP("Full Checkup"),
+    WEB("Website"),
     DNS("DNS"),
+    PORT("Port"),
     TRACEROUTE("Traceroute"),
     HISTORY("History")
 }

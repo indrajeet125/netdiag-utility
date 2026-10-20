@@ -39,6 +39,8 @@ fun ToolsScreen(
     onNavigateToCacheCleaner: () -> Unit,
     onNavigateToIpInfo: () -> Unit,
     onNavigateToSubnetCalculator: () -> Unit,
+    onNavigateToSignal: () -> Unit,
+    onNavigateToSimIdentity: () -> Unit,
     onNavigateToSettings: () -> Unit,
     preferencesRepository: AppPreferencesRepository,
     cacheViewModel: CacheViewModel = hiltViewModel()
@@ -59,7 +61,7 @@ fun ToolsScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = "Utilities & Tools",
+                        text = "Tools",
                         style = MaterialTheme.typography.titleLarge.copy(
                             color = MaterialTheme.colorScheme.onBackground
                         )
@@ -308,7 +310,7 @@ fun ToolsScreen(
 
             // ── 3. Diagnostic & Calculation Tools Grid ──
             Text(
-                text = "DIAGNOSTIC & NETWORK TOOLS",
+                text = "NETWORK TOOLS",
                 style = MaterialTheme.typography.titleSmall.copy(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     letterSpacing = 1.2.sp
@@ -349,7 +351,7 @@ fun ToolsScreen(
                 ToolGridCard(
                     icon = Icons.Outlined.SettingsInputAntenna,
                     title = "Network Mode",
-                    subtitle = "Manage 5G / 4G radio policy preferences",
+                    subtitle = "Choose 4G / 5G preference",
                     onClick = onNavigateToNetworkMode,
                     modifier = Modifier.weight(1f)
                 )
@@ -370,29 +372,24 @@ fun ToolsScreen(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // 2-Column Row 3: App Permissions & App Settings
+            // 2-Column Row 3: Live signal & SIM identity (settings / permissions live behind the top-bar gear)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 ToolGridCard(
-                    icon = Icons.Outlined.Security,
-                    title = "App Permissions",
-                    subtitle = "Telephony, location & overlay status",
-                    onClick = {
-                        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                            data = Uri.fromParts("package", context.packageName, null)
-                        }
-                        context.startActivity(intent)
-                    },
+                    icon = Icons.Outlined.CellTower,
+                    title = "Signal & SIM",
+                    subtitle = "Live signal strength, towers and SIM details",
+                    onClick = onNavigateToSignal,
                     modifier = Modifier.weight(1f)
                 )
 
                 ToolGridCard(
-                    icon = Icons.Outlined.Tune,
-                    title = "App Settings",
-                    subtitle = "Themes, notifications & engine settings",
-                    onClick = onNavigateToSettings,
+                    icon = Icons.Outlined.Badge,
+                    title = "SIM Identity",
+                    subtitle = "IMSI, ICCID and phone number",
+                    onClick = onNavigateToSimIdentity,
                     modifier = Modifier.weight(1f)
                 )
             }

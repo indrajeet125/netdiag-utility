@@ -36,7 +36,6 @@ fun DashboardScreen(
     onNavigateToDeviceInfo: () -> Unit = {},
     onNavigateToSimIdentity: () -> Unit = {},
     onNavigateToRoute: (String) -> Unit = {},
-    onOpenDrawer: () -> Unit,
     viewModel: DashboardViewModel = hiltViewModel()
 ) {
     val networkState by viewModel.networkState.collectAsState()
@@ -65,34 +64,11 @@ fun DashboardScreen(
                         )
                     )
                 },
-                navigationIcon = {
-                    IconButton(onClick = onOpenDrawer) {
-                        Icon(
-                            imageVector = Icons.Default.Menu,
-                            contentDescription = "Menu",
-                            tint = MaterialTheme.colorScheme.onBackground
-                        )
-                    }
-                },
                 actions = {
                     IconButton(onClick = { showSearchRunner = true }) {
                         Icon(
                             imageVector = Icons.Outlined.Search,
                             contentDescription = "Search & Run Diagnostics",
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                    IconButton(onClick = { showPrioritizeSheet = true }) {
-                        Icon(
-                            imageVector = Icons.Outlined.SwapVert,
-                            contentDescription = "Prioritise Sections",
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                    IconButton(onClick = onNavigateToOneTap) {
-                        Icon(
-                            imageVector = Icons.Outlined.TouchApp,
-                            contentDescription = "OneTap",
                             tint = MaterialTheme.colorScheme.primary
                         )
                     }

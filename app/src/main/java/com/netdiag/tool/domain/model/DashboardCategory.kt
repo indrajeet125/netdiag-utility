@@ -15,28 +15,28 @@ enum class DashboardCategory(
 ) {
     TOPOLOGY(
         id = "topology",
-        title = "Network Topology Flow",
-        subtitle = "Live interactive route from Device IP to ISP Gateway & DNS"
+        title = "Connection Path",
+        subtitle = "How your phone reaches the internet: router, ISP and DNS"
     ),
     NETWORK_STATUS(
         id = "network_status",
-        title = "Cellular & Wi-Fi Status",
-        subtitle = "Carrier telemetry, live 2G-5G RF metrics & Tower distance"
+        title = "Connection Status",
+        subtitle = "Wi-Fi or mobile data, signal strength and carrier"
     ),
     HEALTH_CHECKUP(
         id = "health_checkup",
-        title = "Connection Health Diagnostics",
-        subtitle = "Comprehensive health score, DNS lookup & latency checks"
+        title = "Check My Connection",
+        subtitle = "One tap test with an overall health score"
     ),
     QUICK_ACTIONS(
         id = "quick_actions",
-        title = "Quick Diagnostic Tools",
-        subtitle = "Instant access to Speed Test, Ping, OneTap & Radio modes"
+        title = "Quick Actions",
+        subtitle = "Speed test, ping, OneTap and network mode"
     ),
     DEVICE_INFO(
         id = "device_info",
-        title = "Device System Snapshot",
-        subtitle = "Hardware model, radio chipset, battery & Android telemetry"
+        title = "My Device",
+        subtitle = "Model, battery, storage and Android version"
     );
 
     val icon: ImageVector
@@ -49,12 +49,13 @@ enum class DashboardCategory(
         }
 
     companion object {
+        // First-time users see "check my connection" first; less common views go last
         val DEFAULT_ORDER = listOf(
-            NETWORK_STATUS,
-            TOPOLOGY,
             HEALTH_CHECKUP,
+            NETWORK_STATUS,
             QUICK_ACTIONS,
-            DEVICE_INFO
+            DEVICE_INFO,
+            TOPOLOGY
         )
     }
 }
