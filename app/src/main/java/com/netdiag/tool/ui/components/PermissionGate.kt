@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.location.LocationManager
 import android.net.Uri
 import android.os.Build
 import android.os.Process
@@ -25,6 +26,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.location.LocationManagerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -48,6 +50,11 @@ enum class AppPermission(
         title = "Location",
         reason = "Android requires it to read serving / neighbour cell towers and signal metrics.",
         runtimePermissions = listOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+    ),
+    // Not a permission: the system Location switch. With it off, Android returns no cell info even when LOCATION is granted.
+    LOCATION_SERVICE(
+        title = "Location turned on",
+        reason = "Serving cell, PCI and signal data stay empty while the phone's Location switch is off."
     ),
     USAGE_ACCESS(
         title = "Usage access",
@@ -78,11 +85,14 @@ enum class AppPermission(
             }
             mode == AppOpsManager.MODE_ALLOWED
         }
+        LOCATION_SERVICE -> (context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager)
+            ?.let { LocationManagerCompat.isLocationEnabled(it) } ?: false
         ACCESSIBILITY -> PermissionChecker.isAccessibilityEnabled(context)
         OVERLAY -> PermissionChecker.canDrawOverlays(context)
     }
 
     fun settingsIntent(context: Context): Intent = when (this) {
+        LOCATION_SERVICE -> Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)
         USAGE_ACCESS -> Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
         ACCESSIBILITY -> Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
         OVERLAY -> Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${context.packageName}"))

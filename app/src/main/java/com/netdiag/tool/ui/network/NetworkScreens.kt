@@ -126,7 +126,7 @@ fun NetworkScreen(
 
     val permissionGate = rememberPermissionGate()
     val refreshWithPermissions: () -> Unit = {
-        permissionGate.require(AppPermission.PHONE, AppPermission.LOCATION) {
+        permissionGate.require(AppPermission.PHONE, AppPermission.LOCATION, AppPermission.LOCATION_SERVICE) {
             viewModel.checkPermissions()
             viewModel.refresh()
         }

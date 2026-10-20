@@ -100,7 +100,7 @@ fun DeviceInfoScreen(
 
     val permissionGate = rememberPermissionGate()
     val refreshWithPermissions: () -> Unit = {
-        permissionGate.require(AppPermission.PHONE, AppPermission.LOCATION) {
+        permissionGate.require(AppPermission.PHONE, AppPermission.LOCATION, AppPermission.LOCATION_SERVICE) {
             networkViewModel.checkPermissions()
             networkViewModel.refresh()
         }
