@@ -91,39 +91,38 @@ val NetDiagTypography = Typography(
         fontSize = 14.sp,
         letterSpacing = 0.15.sp
     ),
+    // Body & labels use the system sans-serif; numeric readouts opt into Monospace explicitly
     titleSmall = TextStyle(
         fontWeight = FontWeight.Bold,
-        fontSize = 11.sp,
-        letterSpacing = 1.2.sp
+        fontSize = 12.sp,
+        letterSpacing = 0.6.sp
     ),
     bodyLarge = TextStyle(
+        fontSize = 15.sp,
+        lineHeight = 22.sp
+    ),
+    bodyMedium = TextStyle(
         fontSize = 14.sp,
         lineHeight = 20.sp
     ),
-    bodyMedium = TextStyle(
-        fontSize = 13.sp,
-        fontFamily = FontFamily.Monospace,
-        fontWeight = FontWeight.Medium
-    ),
     bodySmall = TextStyle(
         fontSize = 12.sp,
-        fontWeight = FontWeight.Medium
+        lineHeight = 17.sp
     ),
     labelLarge = TextStyle(
         fontWeight = FontWeight.SemiBold,
-        fontSize = 13.sp,
-        letterSpacing = 0.5.sp
+        fontSize = 14.sp,
+        letterSpacing = 0.2.sp
     ),
     labelMedium = TextStyle(
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 11.sp,
-        fontFamily = FontFamily.Monospace,
-        letterSpacing = 0.5.sp
+        fontWeight = FontWeight.Medium,
+        fontSize = 12.sp,
+        letterSpacing = 0.2.sp
     ),
     labelSmall = TextStyle(
         fontWeight = FontWeight.Medium,
-        fontSize = 10.sp,
-        letterSpacing = 0.8.sp
+        fontSize = 11.sp,
+        letterSpacing = 0.3.sp
     )
 )
 
