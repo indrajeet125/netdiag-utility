@@ -26,6 +26,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -945,6 +946,22 @@ fun PingOscilloscopeChart(
     val statusRedColor = StatusRed
     val gridColor = BorderSubtle.copy(alpha = 0.4f)
 
+    // Fixed-width window: points keep their spacing and slide left as new probes arrive,
+    // and the vertical scale eases to a new maximum instead of snapping.
+    val window = 30
+    val recentProbes = probes.takeLast(window + 1)
+    val targetMax = (recentProbes.maxOfOrNull { it.totalTimeMs } ?: 80L).coerceAtLeast(60L).toFloat() * 1.15f
+    val animatedMax by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = targetMax,
+        animationSpec = androidx.compose.animation.core.tween(durationMillis = 450),
+        label = "pingScale"
+    )
+    val slide = remember { androidx.compose.animation.core.Animatable(1f) }
+    LaunchedEffect(probes.size) {
+        slide.snapTo(0f)
+        slide.animateTo(1f, androidx.compose.animation.core.tween(durationMillis = 300))
+    }
+
     Surface(
         shape = RoundedCornerShape(10.dp),
         color = SurfaceElevated,
@@ -1000,32 +1017,21 @@ fun PingOscilloscopeChart(
                     )
                 }
 
-                val recentProbes = probes.takeLast(30)
                 if (recentProbes.size < 2) return@Canvas
 
-                val maxLatency = (recentProbes.maxOfOrNull { it.totalTimeMs } ?: 80L).coerceAtLeast(60L).toFloat()
-                val stepX = w / (recentProbes.size - 1)
-
-                val path = androidx.compose.ui.graphics.Path()
-                val fillPath = androidx.compose.ui.graphics.Path()
-
-                recentProbes.forEachIndexed { i, p ->
-                    val x = i * stepX
-                    val yFraction = (p.totalTimeMs / maxLatency).coerceIn(0.08f, 0.92f)
-                    val y = h - (h * yFraction)
-
-                    if (i == 0) {
-                        path.moveTo(x, y)
-                        fillPath.moveTo(x, h)
-                        fillPath.lineTo(x, y)
-                    } else {
-                        path.lineTo(x, y)
-                        fillPath.lineTo(x, y)
-                    }
+                val stepX = w / (window - 1)
+                // When the window is full the oldest point scrolls off the left edge during the slide
+                val isFull = recentProbes.size > window
+                val baseX = if (isFull) -stepX * slide.value else 0f
+                val points = recentProbes.mapIndexed { i, p ->
+                    val yFraction = (p.totalTimeMs / animatedMax).coerceIn(0.05f, 0.95f)
+                    androidx.compose.ui.geometry.Offset(baseX + i * stepX, h - h * yFraction)
                 }
 
-                fillPath.lineTo((recentProbes.size - 1) * stepX, h)
-                fillPath.close()
+                val path = com.netdiag.tool.ui.components.smoothLinePath(points)
+                val fillPath = com.netdiag.tool.ui.components.fillUnder(path, points, h)
+
+                clipRect {
 
                 // Gradient fill under waveform
                 drawPath(
@@ -1051,13 +1057,12 @@ fun PingOscilloscopeChart(
 
                 // Current tracking dot
                 val lastProbe = recentProbes.last()
-                val lastX = (recentProbes.size - 1) * stepX
-                val lastY = h - (h * (lastProbe.totalTimeMs / maxLatency).coerceIn(0.08f, 0.92f))
                 drawCircle(
                     color = if (lastProbe.isSuccess) accentColor else statusRedColor,
                     radius = 4.dp.toPx(),
-                    center = androidx.compose.ui.geometry.Offset(lastX, lastY)
+                    center = points.last()
                 )
+                }
             }
         }
     }

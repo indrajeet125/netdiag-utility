@@ -43,7 +43,8 @@ fun NetworkTopologyFlowCard(
     modifier: Modifier = Modifier
 ) {
     // Battery Saver / Live Monitoring State
-    var isMonitoringActive by remember { mutableStateOf(true) }
+    // Starts paused: the pulse animation redraws every frame and the gateway ping wakes the radio
+    var isMonitoringActive by remember { mutableStateOf(false) }
     var isScreenResumed by remember { mutableStateOf(true) }
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
 
@@ -85,7 +86,7 @@ fun NetworkTopologyFlowCard(
                         gatewayLatencyMs = (System.currentTimeMillis() - start).coerceAtLeast(1)
                     }
                 } catch (_: Exception) { }
-                delay(3000) // 3s interval for battery efficiency
+                delay(10_000) // 10s interval for battery efficiency
             }
         } else {
             gatewayLatencyMs = null

@@ -15,7 +15,7 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 enum class LiveRefreshRate(val label: String, val intervalMs: Long) {
-    AUTO("Auto", 2000L),
+    AUTO("Auto", 5000L), // Each refresh queries the modem; 5s keeps the radio from staying awake
     ONE_SEC("1 sec", 1000L),
     TWO_SEC("2 sec", 2000L),
     FIVE_SEC("5 sec", 5000L),

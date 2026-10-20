@@ -603,6 +603,17 @@ fun ThroughputWaveformCard(
 
             Spacer(modifier = Modifier.height(6.dp))
 
+            // Light exponential smoothing: raw 100 ms throughput samples are jittery
+            val smoothedMbps = remember(speedHistory) {
+                var ema = speedHistory.firstOrNull()?.mbps ?: 0f
+                speedHistory.map { pt -> ema += 0.35f * (pt.mbps - ema); ema }
+            }
+            val animatedMax by androidx.compose.animation.core.animateFloatAsState(
+                targetValue = (smoothedMbps.maxOrNull() ?: 10f).coerceAtLeast(10f) * 1.15f,
+                animationSpec = androidx.compose.animation.core.tween(durationMillis = 500),
+                label = "speedScale"
+            )
+
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -623,33 +634,15 @@ fun ThroughputWaveformCard(
                         )
                     }
 
-                    if (speedHistory.size >= 2) {
-                        val maxSpeed = (speedHistory.maxOfOrNull { it.mbps } ?: 10f).coerceAtLeast(10f) * 1.15f
-
-                        val points = speedHistory.mapIndexed { index, pt ->
-                            val x = (index.toFloat() / (speedHistory.size - 1)) * w
-                            val y = h - ((pt.mbps / maxSpeed) * h).coerceIn(0f, h)
+                    if (smoothedMbps.size >= 2) {
+                        val points = smoothedMbps.mapIndexed { index, mbps ->
+                            val x = (index.toFloat() / (smoothedMbps.size - 1)) * w
+                            val y = h - ((mbps / animatedMax) * h).coerceIn(0f, h)
                             Offset(x, y)
                         }
 
-                        // Path for stroke
-                        val strokePath = Path().apply {
-                            moveTo(points.first().x, points.first().y)
-                            for (i in 1 until points.size) {
-                                val prev = points[i - 1]
-                                val cur = points[i]
-                                val cx = (prev.x + cur.x) / 2f
-                                cubicTo(cx, prev.y, cx, cur.y, cur.x, cur.y)
-                            }
-                        }
-
-                        // Path for gradient fill
-                        val fillPath = Path().apply {
-                            addPath(strokePath)
-                            lineTo(points.last().x, h)
-                            lineTo(points.first().x, h)
-                            close()
-                        }
+                        val strokePath = com.netdiag.tool.ui.components.smoothLinePath(points)
+                        val fillPath = com.netdiag.tool.ui.components.fillUnder(strokePath, points, h)
 
                         drawPath(
                             path = fillPath,

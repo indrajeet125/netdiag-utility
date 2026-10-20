@@ -46,6 +46,12 @@ enum class AppPermission(
         reason = "Reads SIM subscriptions, carrier and cellular network state.",
         runtimePermissions = listOf(Manifest.permission.READ_PHONE_STATE)
     ),
+    // Since Android 11 the SIM's own number (MSISDN) needs this, READ_PHONE_STATE is no longer enough
+    PHONE_NUMBERS(
+        title = "Phone numbers",
+        reason = "Reads your SIM's phone number (MSISDN), if the carrier stored it on the SIM.",
+        runtimePermissions = listOf(Manifest.permission.READ_PHONE_NUMBERS)
+    ),
     LOCATION(
         title = "Location",
         reason = "Android requires it to read serving / neighbour cell towers and signal metrics.",
@@ -72,7 +78,7 @@ enum class AppPermission(
     val isRuntime: Boolean get() = runtimePermissions.isNotEmpty()
 
     fun isGranted(context: Context): Boolean = when (this) {
-        PHONE, LOCATION -> runtimePermissions.any {
+        PHONE, PHONE_NUMBERS, LOCATION -> runtimePermissions.any {
             ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
         }
         USAGE_ACCESS -> {

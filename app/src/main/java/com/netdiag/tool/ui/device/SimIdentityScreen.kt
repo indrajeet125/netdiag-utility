@@ -50,7 +50,7 @@ fun SimIdentityScreen(
     // SIM identities can't be read without Phone permission: ask as soon as the screen opens
     val permissionGate = rememberPermissionGate()
     LaunchedEffect(Unit) {
-        permissionGate.require(AppPermission.PHONE) { viewModel.refresh() }
+        permissionGate.require(AppPermission.PHONE, AppPermission.PHONE_NUMBERS) { viewModel.refresh() }
     }
 
     val currentSub = if (selectedSlot == 0) sim1 else sim2
@@ -202,13 +202,20 @@ fun SimIdentityScreen(
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     // 1. IMSI (International Mobile Subscriber Identity)
+                    // Android 10+ only gives the full IMSI to system/carrier apps. Its first digits are the
+                    // home network code (MCC+MNC), which is public, so show that part honestly.
                     val rawImsi = info.imsi
-                    val maskedImsi = maskValue(rawImsi, prefixCount = 5, suffixCount = 2)
+                    val imsiFallback = if (!info.mcc.isNullOrBlank() && !info.mnc.isNullOrBlank()) {
+                        "${info.mcc}${info.mnc}•••••••••• (rest blocked by Android 10+)"
+                    } else {
+                        "Blocked by Android 10+ for non-system apps"
+                    }
+                    val maskedImsi = if (rawImsi != null) maskValue(rawImsi, prefixCount = 5, suffixCount = 2) else imsiFallback
 
                     MaskedIdentityRow(
                         label = "IMSI (Subscriber ID)",
                         maskedValue = maskedImsi,
-                        rawValue = rawImsi ?: "Restricted by OS (Android 10+)",
+                        rawValue = rawImsi ?: imsiFallback,
                         isVisible = showImsi,
                         onToggleVisibility = { showImsi = !showImsi },
                         onCopy = { rawImsi?.let { copyToClipboard("IMSI", it) } }
@@ -220,12 +227,17 @@ fun SimIdentityScreen(
 
                     // 2. MSISDN (Phone Number)
                     val rawMsisdn = info.msisdn
-                    val maskedMsisdn = maskValue(rawMsisdn, prefixCount = 3, suffixCount = 3)
+                    val msisdnFallback = if (!AppPermission.PHONE_NUMBERS.isGranted(context)) {
+                        "Needs \"Phone numbers\" permission"
+                    } else {
+                        "Not stored on this SIM by the carrier"
+                    }
+                    val maskedMsisdn = if (rawMsisdn != null) maskValue(rawMsisdn, prefixCount = 3, suffixCount = 3) else msisdnFallback
 
                     MaskedIdentityRow(
                         label = "MSISDN (Phone Number)",
                         maskedValue = maskedMsisdn,
-                        rawValue = rawMsisdn ?: "Not Provisioned on SIM",
+                        rawValue = rawMsisdn ?: msisdnFallback,
                         isVisible = showMsisdn,
                         onToggleVisibility = { showMsisdn = !showMsisdn },
                         onCopy = { rawMsisdn?.let { copyToClipboard("Phone Number", it) } }
