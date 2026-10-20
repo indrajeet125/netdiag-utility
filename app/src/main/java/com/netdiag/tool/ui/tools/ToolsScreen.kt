@@ -26,6 +26,8 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.netdiag.tool.data.repository.AppPreferencesRepository
 import com.netdiag.tool.ui.cache.CacheViewModel
+import com.netdiag.tool.ui.components.AppPermission
+import com.netdiag.tool.ui.components.rememberPermissionGate
 import com.netdiag.tool.ui.onboarding.PermissionChecker
 import com.netdiag.tool.ui.theme.*
 
@@ -45,6 +47,7 @@ fun ToolsScreen(
     val oneTapEnabled by preferencesRepository.oneTapEnabled.collectAsState()
     val isAccessibilityActive = remember { PermissionChecker.isAccessibilityEnabled(context) }
     val canDrawOverlays = remember { PermissionChecker.canDrawOverlays(context) }
+    val permissionGate = rememberPermissionGate()
 
     val scanSummary by cacheViewModel.scanSummary.collectAsState()
     val isCleaning by cacheViewModel.isCleaning.collectAsState()
@@ -144,7 +147,16 @@ fun ToolsScreen(
 
                         Switch(
                             checked = oneTapEnabled,
-                            onCheckedChange = { preferencesRepository.setOneTapEnabled(it) },
+                            onCheckedChange = { enable ->
+                                if (enable) {
+                                    // The floating bubble can't work without these two special accesses
+                                    permissionGate.require(AppPermission.ACCESSIBILITY, AppPermission.OVERLAY) {
+                                        preferencesRepository.setOneTapEnabled(true)
+                                    }
+                                } else {
+                                    preferencesRepository.setOneTapEnabled(false)
+                                }
+                            },
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
                                 checkedTrackColor = MaterialTheme.colorScheme.primary

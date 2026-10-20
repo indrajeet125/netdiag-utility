@@ -31,7 +31,9 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.netdiag.tool.domain.model.*
+import com.netdiag.tool.ui.components.AppPermission
 import com.netdiag.tool.ui.components.EmptyState
+import com.netdiag.tool.ui.components.rememberPermissionGate
 import com.netdiag.tool.ui.components.KeyValueRow
 import com.netdiag.tool.ui.theme.*
 
@@ -58,6 +60,9 @@ fun CacheCleanerScreen(
     var isClearAllConfirmed by remember { mutableStateOf(false) }
     var showSortMenu by remember { mutableStateOf(false) }
     var showAccessibilityPrompt by remember { mutableStateOf(false) }
+
+    // Scanning / sizing app caches needs Usage access
+    val permissionGate = rememberPermissionGate()
 
     val batchSession by viewModel.batchSession.collectAsState()
     val context = LocalContext.current
@@ -216,8 +221,10 @@ fun CacheCleanerScreen(
 
                         Button(
                             onClick = {
-                                isClearAllConfirmed = false
-                                showClearConfirmation = true
+                                permissionGate.require(AppPermission.USAGE_ACCESS) {
+                                    isClearAllConfirmed = false
+                                    showClearConfirmation = true
+                                }
                             },
                             shape = RoundedCornerShape(10.dp),
                             colors = ButtonDefaults.buttonColors(
@@ -482,7 +489,9 @@ fun CacheCleanerScreen(
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     OutlinedButton(
-                        onClick = { viewModel.scanInstalledApps(force = true) },
+                        onClick = {
+                            permissionGate.require(AppPermission.USAGE_ACCESS) { viewModel.scanInstalledApps(force = true) }
+                        },
                         modifier = Modifier
                             .weight(1f)
                             .height(44.dp),
@@ -503,8 +512,10 @@ fun CacheCleanerScreen(
 
                     Button(
                         onClick = {
-                            isClearAllConfirmed = true
-                            showClearConfirmation = true
+                            permissionGate.require(AppPermission.USAGE_ACCESS) {
+                                isClearAllConfirmed = true
+                                showClearConfirmation = true
+                            }
                         },
                         modifier = Modifier
                             .weight(1f)

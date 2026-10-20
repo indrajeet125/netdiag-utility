@@ -91,28 +91,74 @@ class TelephonyRepository @Inject constructor(
     private val _networkMode = MutableStateFlow(NetworkModeInfo())
     val networkMode: StateFlow<NetworkModeInfo> = _networkMode.asStateFlow()
 
+    fun hasLocationPermission(): Boolean {
+        return androidx.core.content.ContextCompat.checkSelfPermission(
+            context, android.Manifest.permission.ACCESS_FINE_LOCATION
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED ||
+        androidx.core.content.ContextCompat.checkSelfPermission(
+            context, android.Manifest.permission.ACCESS_COARSE_LOCATION
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+    }
+
+    fun hasPhonePermission(): Boolean {
+        return androidx.core.content.ContextCompat.checkSelfPermission(
+            context, android.Manifest.permission.READ_PHONE_STATE
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+    }
+
     @Suppress("MissingPermission")
     fun refresh() {
         try {
-            val subManager = SubscriptionManager.from(context)
-            val subs = try { subManager.activeSubscriptionInfoList ?: emptyList() } catch (e: SecurityException) { emptyList() }
-            val defaultDataSubId = SubscriptionManager.getDefaultDataSubscriptionId()
+            val hasPhone = hasPhonePermission()
+            val hasLoc = hasLocationPermission()
+            android.util.Log.d("NetDiag", "[PERM] hasPhone=$hasPhone hasLocation=$hasLoc")
 
-            subs.forEachIndexed { index, subInfo ->
+            val subManager = context.getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE) as? SubscriptionManager
+                ?: SubscriptionManager.from(context)
+
+            val subs = try {
+                if (hasPhone) subManager.activeSubscriptionInfoList ?: emptyList() else emptyList()
+            } catch (e: SecurityException) {
+                android.util.Log.w("NetDiag", "[SIM] SecurityException reading activeSubscriptionInfoList: ${e.message}")
+                emptyList()
+            }
+            val defaultDataSubId = try {
+                SubscriptionManager.getDefaultDataSubscriptionId()
+            } catch (_: Exception) {
+                SubscriptionManager.INVALID_SUBSCRIPTION_ID
+            }
+
+            var s1 = SimSubscription()
+            var s2 = SimSubscription()
+            subs.forEach { subInfo ->
                 val sub = buildSimSubscription(subInfo, defaultDataSubId)
-                if (index == 0) _sim1.value = sub
-                else if (index == 1) _sim2.value = sub
+                if (subInfo.simSlotIndex == 0) s1 = sub
+                else if (subInfo.simSlotIndex == 1) s2 = sub
+            }
+
+            if (subs.isNotEmpty()) {
+                _sim1.value = s1
+                _sim2.value = s2
+            } else if (hasPhone) {
+                _sim1.value = SimSubscription()
+                _sim2.value = SimSubscription()
+            } else {
+                android.util.Log.d("NetDiag", "[SIM] Subscriptions cannot be enumerated: READ_PHONE_STATE is not granted")
             }
 
             // Current RAT from active subscription or detected serving cell
             val detectedRat = if (_sim1.value.servingCell?.rat != null && _sim1.value.servingCell?.rat != RadioAccessTechnology.UNKNOWN) {
                 _sim1.value.servingCell!!.rat
+            } else if (_sim2.value.servingCell?.rat != null && _sim2.value.servingCell?.rat != RadioAccessTechnology.UNKNOWN) {
+                _sim2.value.servingCell!!.rat
             } else {
                 mapNetworkType(telephonyManager.dataNetworkType)
             }
             _currentRat.value = detectedRat
-            if (_sim1.value.rat == RadioAccessTechnology.UNKNOWN) {
+            if (_sim1.value.rat == RadioAccessTechnology.UNKNOWN && _sim1.value.info.subscriptionId != -1) {
                 _sim1.value = _sim1.value.copy(rat = detectedRat)
+            } else if (_sim2.value.rat == RadioAccessTechnology.UNKNOWN && _sim2.value.info.subscriptionId != -1) {
+                _sim2.value = _sim2.value.copy(rat = detectedRat)
             }
 
             // Network mode info
@@ -124,7 +170,7 @@ class TelephonyRepository @Inject constructor(
                 availableModes = listOf("Auto", "4G/3G/2G", "4G Only", "5G Preferred", "5G Only")
             )
         } catch (e: Exception) {
-            // Handle gracefully
+            android.util.Log.e("NetDiag", "[SIM] Error in refresh(): ${e.message}", e)
         }
     }
 
@@ -173,17 +219,43 @@ class TelephonyRepository @Inject constructor(
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) subInfo.cardId else -1
         } catch (_: Exception) { -1 }
 
+        val simStateStr = when (subTm.simState) {
+            TelephonyManager.SIM_STATE_READY -> "READY"
+            TelephonyManager.SIM_STATE_ABSENT -> "ABSENT"
+            TelephonyManager.SIM_STATE_PIN_REQUIRED -> "PIN_REQUIRED"
+            TelephonyManager.SIM_STATE_PUK_REQUIRED -> "PUK_REQUIRED"
+            TelephonyManager.SIM_STATE_NETWORK_LOCKED -> "NETWORK_LOCKED"
+            else -> when (telephonyManager.simState) {
+                TelephonyManager.SIM_STATE_READY -> "READY"
+                TelephonyManager.SIM_STATE_ABSENT -> "ABSENT"
+                else -> "UNKNOWN"
+            }
+        }
+
+        val carrierName = subInfo.carrierName?.toString()?.takeIf { it.isNotBlank() }
+            ?: subTm.simOperatorName.takeIf { it.isNotBlank() }
+            ?: subTm.networkOperatorName.takeIf { it.isNotBlank() }
+            ?: telephonyManager.simOperatorName.takeIf { it.isNotBlank() }
+            ?: telephonyManager.networkOperatorName.takeIf { it.isNotBlank() }
+            ?: "Unavailable"
+
+        android.util.Log.d(
+            "NetDiag",
+            "[SIM] slotIndex=${subInfo.simSlotIndex} subscriptionId=${subInfo.subscriptionId} simState=$simStateStr carrier=$carrierName isDataSim=${subInfo.subscriptionId == defaultDataSubId} dataSubId=$defaultDataSubId"
+        )
+
         val simInfo = SimInfo(
             subscriptionId = subInfo.subscriptionId,
             slotIndex = subInfo.simSlotIndex,
             displayName = subInfo.displayName?.toString() ?: "",
-            carrierName = subInfo.carrierName?.toString()?.takeIf { it.isNotBlank() } ?: subTm.networkOperatorName.takeIf { it.isNotBlank() } ?: "Unknown",
+            carrierName = carrierName,
             mcc = mcc,
             mnc = mnc,
             plmn = plmn,
             countryIso = subInfo.countryIso.ifBlank { subTm.networkCountryIso },
             isDefaultData = subInfo.subscriptionId == defaultDataSubId,
             isRoaming = isRoaming,
+            simState = simStateStr,
             isEmbedded = subInfo.isEmbedded,
             iccId = iccId,
             imsi = imsi,
@@ -349,13 +421,28 @@ class TelephonyRepository @Inject constructor(
 
         // 5G NSA vs SA determination
         var nsaMode: String? = null
-        if (rat == RadioAccessTechnology.NR_SA || servingCell?.rat == RadioAccessTechnology.NR_SA || secondaryServingCell?.rat == RadioAccessTechnology.NR_SA) {
-            val hasLte = servingCell?.rat == RadioAccessTechnology.LTE || secondaryServingCell?.rat == RadioAccessTechnology.LTE || neighborCells.any { it.rat == RadioAccessTechnology.LTE }
-            if (hasLte) {
+        val isNrConnected = rat == RadioAccessTechnology.NR_SA ||
+                rat == RadioAccessTechnology.NR_NSA ||
+                servingCell?.rat == RadioAccessTechnology.NR_SA ||
+                secondaryServingCell?.rat == RadioAccessTechnology.NR_SA ||
+                (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
+                 try {
+                     subTm.serviceState?.networkRegistrationInfoList?.any {
+                         it.transportType == android.telephony.AccessNetworkConstants.TRANSPORT_TYPE_WWAN &&
+                         it.accessNetworkTechnology == TelephonyManager.NETWORK_TYPE_NR
+                     } == true
+                 } catch (_: Exception) { false })
+
+        if (isNrConnected) {
+            val isLteAnchor = (servingCell?.rat == RadioAccessTechnology.LTE) ||
+                              (secondaryServingCell?.rat == RadioAccessTechnology.LTE) ||
+                              (subTm.dataNetworkType == TelephonyManager.NETWORK_TYPE_LTE && servingCell?.rat != RadioAccessTechnology.NR_SA)
+            if (isLteAnchor) {
                 rat = RadioAccessTechnology.NR_NSA
-                nsaMode = "NR + LTE Anchor"
+                nsaMode = "Non-Standalone (NSA)"
             } else {
-                nsaMode = "Standalone NR"
+                rat = RadioAccessTechnology.NR_SA
+                nsaMode = "Standalone (SA)"
             }
         }
 
@@ -582,7 +669,7 @@ class TelephonyRepository @Inject constructor(
 
 object RadioBandUtils {
     fun calculateLteBand(earfcn: Int?): String? {
-        if (earfcn == null) return null
+        if (earfcn == null || earfcn <= 0) return null
         return when (earfcn) {
             in 0..599 -> "B1 (2100 MHz)"
             in 600..1199 -> "B2 (1900 MHz)"
@@ -592,28 +679,45 @@ object RadioBandUtils {
             in 2750..3449 -> "B7 (2600 MHz)"
             in 3450..3799 -> "B8 (900 MHz)"
             in 5000..5179 -> "B12 (700 MHz)"
-            in 6500..6699 -> "B17 (700 MHz)"
-            in 8690..9039 -> "B20 (800 MHz)"
-            in 9210..9659 -> "B25 (1900 MHz)"
-            in 9870..9919 -> "B28 (700 MHz)"
+            in 5180..5279 -> "B13 (700 MHz)"
+            in 5280..5379 -> "B14 (700 MHz FirstNet)"
+            in 5730..5849 -> "B17 (700 MHz)"
+            in 6150..6449 -> "B20 (800 MHz)"
+            in 8040..8689 -> "B25 (1900 MHz)"
+            in 8690..9039 -> "B26 (850 MHz)"
+            in 9210..9659 -> "B28 (700 MHz)"
             in 37750..38249 -> "B38 (2600 MHz)"
             in 38650..39649 -> "B40 (2300 MHz)"
             in 39650..41589 -> "B41 (2500 MHz)"
             in 41590..43589 -> "B42 (3500 MHz)"
             in 43590..45589 -> "B43 (3700 MHz)"
+            in 55240..56739 -> "B48 (3500 MHz CBRS)"
+            in 66436..67335 -> "B66 (1700/2100 MHz)"
+            in 68586..68935 -> "B71 (600 MHz)"
             else -> "LTE ($earfcn)"
         }
     }
 
     fun calculateNrBand(nrarfcn: Int?): String? {
-        if (nrarfcn == null) return null
+        if (nrarfcn == null || nrarfcn <= 0) return null
         return when (nrarfcn) {
+            in 123400..130400 -> "n71 (600 MHz)"
             in 151600..160600 -> "n28 (700 MHz)"
+            in 158200..164200 -> "n20 (800 MHz)"
+            in 173800..178800 -> "n5 (850 MHz)"
+            in 185000..192000 -> "n8 (900 MHz)"
+            in 361000..376000 -> "n3 (1800 MHz)"
+            in 386000..398000 -> "n2 (1900 MHz)"
             in 422000..434000 -> "n1 (2100 MHz)"
+            in 460000..480000 -> "n40 (2300 MHz)"
             in 499200..537999 -> "n41 (2500 MHz)"
             in 620000..653333 -> "n78 (3500 MHz)"
-            in 653334..710000 -> "n77 (3700 MHz)"
-            in 2054166..2104165 -> "n258 (26 GHz)"
+            in 653334..680000 -> "n77 (3700 MHz)"
+            in 693334..733333 -> "n79 (4700 MHz)"
+            in 2016667..2070832 -> "n258 (26 GHz)"
+            in 2070833..2084999 -> "n261 (28 GHz)"
+            in 2054166..2104165 -> "n257 (28 GHz)"
+            in 2229166..2279165 -> "n260 (39 GHz)"
             else -> "NR ($nrarfcn)"
         }
     }
@@ -675,15 +779,25 @@ class PingRepository @Inject constructor(
         buildReport(config, probes)
     }
 
+    private fun sanitizeHost(target: String): String {
+        return target.trim()
+            .removePrefix("https://")
+            .removePrefix("http://")
+            .substringBefore("/")
+            .substringBefore(":")
+            .ifBlank { "google.com" }
+    }
+
     private fun doHttpProbe(seq: Int, config: PingConfiguration): SinglePingProbe {
         val start = System.currentTimeMillis()
         try {
+            val host = sanitizeHost(config.target)
             val scheme = if (config.port == 443 || config.port == 8443) "https" else "http"
-            val urlStr = "$scheme://${config.target}:${config.port}"
+            val urlStr = "$scheme://$host:${config.port}"
             val url = URL(urlStr)
 
             val dnsStart = System.currentTimeMillis()
-            InetAddress.getByName(config.target)
+            InetAddress.getByName(host)
             val dnsTime = System.currentTimeMillis() - dnsStart
 
             val conn = url.openConnection() as java.net.HttpURLConnection
@@ -721,8 +835,9 @@ class PingRepository @Inject constructor(
     private fun doTcpProbe(seq: Int, config: PingConfiguration): SinglePingProbe {
         val start = System.currentTimeMillis()
         try {
+            val host = sanitizeHost(config.target)
             val dnsStart = System.currentTimeMillis()
-            val addr = InetAddress.getByName(config.target)
+            val addr = InetAddress.getByName(host)
             val dnsTime = System.currentTimeMillis() - dnsStart
 
             val socket = Socket()
@@ -752,12 +867,13 @@ class PingRepository @Inject constructor(
     private fun doIcmpProbe(seq: Int, config: PingConfiguration): SinglePingProbe {
         val start = System.currentTimeMillis()
         try {
+            val host = sanitizeHost(config.target)
             val process = ProcessBuilder(
                 "ping",
                 "-c", "1",
                 "-s", config.payloadBytes.toString(),
                 "-W", (config.timeoutMs / 1000).coerceAtLeast(1).toString(),
-                config.target
+                host
             )
                 .redirectErrorStream(true)
                 .start()

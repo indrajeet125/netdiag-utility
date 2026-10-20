@@ -31,7 +31,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.netdiag.tool.domain.model.SimSubscription
+import com.netdiag.tool.ui.components.AppPermission
 import com.netdiag.tool.ui.components.KeyValueRow
+import com.netdiag.tool.ui.components.rememberPermissionGate
 import com.netdiag.tool.ui.dashboard.DashboardViewModel
 import com.netdiag.tool.ui.theme.*
 
@@ -44,6 +46,12 @@ fun SimIdentityScreen(
     val sim1 by viewModel.sim1.collectAsState()
     val sim2 by viewModel.sim2.collectAsState()
     var selectedSlot by remember { mutableStateOf(0) }
+
+    // SIM identities can't be read without Phone permission: ask as soon as the screen opens
+    val permissionGate = rememberPermissionGate()
+    LaunchedEffect(Unit) {
+        permissionGate.require(AppPermission.PHONE) { viewModel.refresh() }
+    }
 
     val currentSub = if (selectedSlot == 0) sim1 else sim2
     val info = currentSub.info
@@ -194,13 +202,13 @@ fun SimIdentityScreen(
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     // 1. IMSI (International Mobile Subscriber Identity)
-                    val rawImsi = info.imsi ?: if (info.mcc != null && info.mnc != null) "${info.mcc}${info.mnc}000000000" else null
+                    val rawImsi = info.imsi
                     val maskedImsi = maskValue(rawImsi, prefixCount = 5, suffixCount = 2)
 
                     MaskedIdentityRow(
                         label = "IMSI (Subscriber ID)",
                         maskedValue = maskedImsi,
-                        rawValue = rawImsi ?: "Not Accessible (Restricted by Carrier)",
+                        rawValue = rawImsi ?: "Restricted by OS (Android 10+)",
                         isVisible = showImsi,
                         onToggleVisibility = { showImsi = !showImsi },
                         onCopy = { rawImsi?.let { copyToClipboard("IMSI", it) } }

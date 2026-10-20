@@ -119,12 +119,39 @@ fun NetworkScreen(
     var expandNeighbors by remember { mutableStateOf(false) }
     var selectedMetricExplanation by remember { mutableStateOf<MetricExplanation?>(null) }
 
+    val context = LocalContext.current
+    val hasPermissions by viewModel.hasPermissions.collectAsState()
+    val hasLocationPermission by viewModel.hasLocationPermission.collectAsState()
+    val hasPhonePermission by viewModel.hasPhonePermission.collectAsState()
+
+    val permissionGate = rememberPermissionGate()
+    val refreshWithPermissions: () -> Unit = {
+        permissionGate.require(AppPermission.PHONE, AppPermission.LOCATION) {
+            viewModel.checkPermissions()
+            viewModel.refresh()
+        }
+    }
+
+    // Every metric on this screen depends on cell data, so ask as soon as it opens
+    LaunchedEffect(Unit) { refreshWithPermissions() }
+
+    // Android Runtime Permission Launcher for Multiple Permissions
+    val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
+    ) { results ->
+        viewModel.checkPermissions()
+        viewModel.refresh()
+    }
+
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
 
     DisposableEffect(lifecycleOwner) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             when (event) {
-                androidx.lifecycle.Lifecycle.Event.ON_RESUME -> viewModel.startLiveMonitoring()
+                androidx.lifecycle.Lifecycle.Event.ON_RESUME -> {
+                    viewModel.checkPermissions()
+                    viewModel.startLiveMonitoring()
+                }
                 androidx.lifecycle.Lifecycle.Event.ON_PAUSE -> viewModel.stopLiveMonitoring()
                 else -> {}
             }
@@ -219,7 +246,7 @@ fun NetworkScreen(
 
                     Spacer(modifier = Modifier.width(4.dp))
 
-                    IconButton(onClick = { viewModel.refresh() }) {
+                    IconButton(onClick = refreshWithPermissions) {
                         Icon(
                             imageVector = Icons.Outlined.Refresh,
                             contentDescription = "Refresh",
@@ -245,6 +272,103 @@ fun NetworkScreen(
                 .padding(padding)
                 .padding(horizontal = 16.dp)
         ) {
+            // ── 0. RUNTIME PERMISSION REQUIRED WARNING BANNER ──
+            if (!hasPermissions) {
+                item {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = SurfaceElevated,
+                        border = BorderStroke(1.dp, StatusAmber.copy(alpha = 0.5f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Warning,
+                                    contentDescription = null,
+                                    tint = StatusAmber,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text(
+                                    text = "Cellular Permissions Required",
+                                    style = MaterialTheme.typography.titleMedium.copy(
+                                        color = TextPrimary,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 15.sp
+                                    )
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            Text(
+                                text = "Android requires Phone & Location permissions to inspect serving cell towers, PCI, RSRP signal quality, and carrier identity without simulating fake values.",
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    color = TextSecondary,
+                                    lineHeight = 18.sp
+                                )
+                            )
+
+                            Spacer(modifier = Modifier.height(14.dp))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Button(
+                                    onClick = {
+                                        val permsToRequest = mutableListOf<String>()
+                                        if (!hasPhonePermission) {
+                                            permsToRequest.add(android.Manifest.permission.READ_PHONE_STATE)
+                                        }
+                                        if (!hasLocationPermission) {
+                                            permsToRequest.add(android.Manifest.permission.ACCESS_FINE_LOCATION)
+                                            permsToRequest.add(android.Manifest.permission.ACCESS_COARSE_LOCATION)
+                                        }
+                                        if (permsToRequest.isNotEmpty()) {
+                                            permissionLauncher.launch(permsToRequest.toTypedArray())
+                                        }
+                                    },
+                                    modifier = Modifier.weight(1f).height(42.dp),
+                                    shape = RoundedCornerShape(8.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = AccentCyan,
+                                        contentColor = CanvasNavy
+                                    )
+                                ) {
+                                    Text(
+                                        text = "Grant Permissions",
+                                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)
+                                    )
+                                }
+
+                                OutlinedButton(
+                                    onClick = {
+                                        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                            data = android.net.Uri.fromParts("package", context.packageName, null)
+                                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                                        }
+                                        context.startActivity(intent)
+                                    },
+                                    modifier = Modifier.weight(1f).height(42.dp),
+                                    shape = RoundedCornerShape(8.dp),
+                                    border = BorderStroke(1.dp, BorderSubtle),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary)
+                                ) {
+                                    Text(
+                                        text = "Open Settings",
+                                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(10.dp))
+                }
+            }
+
             // ── 1. DUAL SIM SELECTOR TABS ──
             item {
                 Spacer(modifier = Modifier.height(6.dp))

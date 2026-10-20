@@ -42,6 +42,26 @@ class NetworkViewModel @Inject constructor(
     private val _selectedSimSlot = MutableStateFlow(0)
     val selectedSimSlot: StateFlow<Int> = _selectedSimSlot.asStateFlow()
 
+    private val _hasLocationPermission = MutableStateFlow(telephonyRepo.hasLocationPermission())
+    val hasLocationPermission: StateFlow<Boolean> = _hasLocationPermission.asStateFlow()
+
+    private val _hasPhonePermission = MutableStateFlow(telephonyRepo.hasPhonePermission())
+    val hasPhonePermission: StateFlow<Boolean> = _hasPhonePermission.asStateFlow()
+
+    // Not initialised via checkPermissions(): it writes to this flow, which is still null during init
+    private val _hasPermissions = MutableStateFlow(_hasLocationPermission.value && _hasPhonePermission.value)
+    val hasPermissions: StateFlow<Boolean> = _hasPermissions.asStateFlow()
+
+    fun checkPermissions(): Boolean {
+        val hasLoc = telephonyRepo.hasLocationPermission()
+        val hasPhone = telephonyRepo.hasPhonePermission()
+        _hasLocationPermission.value = hasLoc
+        _hasPhonePermission.value = hasPhone
+        val both = hasLoc && hasPhone
+        _hasPermissions.value = both
+        return both
+    }
+
     private val _refreshRate = MutableStateFlow(LiveRefreshRate.AUTO)
     val refreshRate: StateFlow<LiveRefreshRate> = _refreshRate.asStateFlow()
 

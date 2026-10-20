@@ -9,11 +9,18 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.Speed
+import androidx.compose.material.icons.outlined.Dns
+import androidx.compose.material.icons.outlined.Timer
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.ExpandMore
+import androidx.compose.material.icons.outlined.ExpandLess
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -21,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -39,10 +47,61 @@ fun PingScreen(
     var targetInput by remember { mutableStateOf(state.config.target) }
     var showSettingsDialog by remember { mutableStateOf(false) }
 
+    // Custom Target Port (for TCP and HTTP)
+    var portInput by remember { mutableStateOf(state.config.port.toString()) }
+    var isCustomPort by remember { mutableStateOf(false) }
+
+    // Attempts / Probe Count
     var attemptCount by remember { mutableStateOf(10) }
+    var isCustomCount by remember { mutableStateOf(false) }
+    var customCountInput by remember { mutableStateOf("10") }
+
+    // ICMP Payload Bytes
     var payloadBytes by remember { mutableStateOf(64) }
-    var timeoutSec by remember { mutableStateOf("2") }
-    var intervalMs by remember { mutableStateOf("500") }
+    var isCustomPayload by remember { mutableStateOf(false) }
+    var customPayloadInput by remember { mutableStateOf("64") }
+
+    // Timing: Timeout (ms) & Interval (ms)
+    var timeoutMs by remember { mutableStateOf(2000) }
+    var isCustomTimeout by remember { mutableStateOf(false) }
+    var customTimeoutInput by remember { mutableStateOf("2000") }
+
+    var intervalMs by remember { mutableStateOf(500L) }
+    var isCustomInterval by remember { mutableStateOf(false) }
+    var customIntervalInput by remember { mutableStateOf("500") }
+
+    // Advanced / Custom Parameters Card Expand State
+    var showAdvancedOptions by remember { mutableStateOf(false) }
+
+    val effectiveCount = if (isCustomCount) {
+        customCountInput.toIntOrNull()?.coerceIn(1, 1000) ?: attemptCount
+    } else {
+        attemptCount
+    }
+
+    val effectivePort = if (isCustomPort) {
+        portInput.toIntOrNull()?.coerceIn(1, 65535) ?: 443
+    } else {
+        portInput.toIntOrNull()?.coerceIn(1, 65535) ?: if (selectedTab == PingType.TCP) 443 else 443
+    }
+
+    val effectivePayload = if (isCustomPayload) {
+        customPayloadInput.toIntOrNull()?.coerceIn(16, 65507) ?: payloadBytes
+    } else {
+        payloadBytes
+    }
+
+    val effectiveTimeout = if (isCustomTimeout) {
+        customTimeoutInput.toIntOrNull()?.coerceIn(100, 30000) ?: timeoutMs
+    } else {
+        timeoutMs
+    }
+
+    val effectiveInterval = if (isCustomInterval) {
+        customIntervalInput.toLongOrNull()?.coerceIn(20L, 10000L) ?: intervalMs
+    } else {
+        intervalMs
+    }
 
     LaunchedEffect(selectedTab) {
         viewModel.updateConfig(state.config.copy(type = selectedTab))
@@ -112,10 +171,11 @@ fun PingScreen(
                                     state.config.copy(
                                         target = targetInput.trim().ifEmpty { "google.com" },
                                         type = selectedTab,
-                                        count = attemptCount,
-                                        payloadBytes = payloadBytes,
-                                        timeoutMs = (timeoutSec.toIntOrNull() ?: 2) * 1000,
-                                        intervalMs = intervalMs.toLongOrNull() ?: 500L
+                                        port = effectivePort,
+                                        count = effectiveCount,
+                                        payloadBytes = effectivePayload,
+                                        timeoutMs = effectiveTimeout,
+                                        intervalMs = effectiveInterval
                                     )
                                 )
                                 viewModel.startPing()
@@ -194,22 +254,130 @@ fun PingScreen(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // Target Input Field
+                // Target Input Field with Leading & Trailing Icons
                 OutlinedTextField(
                     value = targetInput,
                     onValueChange = { targetInput = it },
-                    label = { Text("Target Host / Domain", style = MaterialTheme.typography.bodySmall) },
-                    placeholder = { Text("google.com") },
+                    label = { Text("Target Host / Domain / IP", style = MaterialTheme.typography.bodySmall) },
+                    placeholder = { Text("google.com, 1.1.1.1, 192.168.1.1") },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Outlined.Dns,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    },
+                    trailingIcon = {
+                        if (targetInput.isNotEmpty()) {
+                            IconButton(onClick = { targetInput = "" }) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Clear",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                    },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(10.dp)
                 )
 
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // Quick Target Presets Row
+                androidx.compose.foundation.lazy.LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    val presets = listOf("google.com", "cloudflare.com", "1.1.1.1", "8.8.8.8", "192.168.1.1")
+                    items(presets.size) { idx ->
+                        val domain = presets[idx]
+                        SuggestionChip(
+                            onClick = { targetInput = domain },
+                            label = { Text(domain, fontSize = 11.sp) },
+                            colors = SuggestionChipDefaults.suggestionChipColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                            )
+                        )
+                    }
+                }
+
+                // Port Selector (For TCP and HTTP)
+                if (selectedTab != PingType.ICMP) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "TARGET PORT",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            letterSpacing = 1.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    val portPresets = listOf(
+                        443 to "443 (HTTPS)",
+                        80 to "80 (HTTP)",
+                        8080 to "8080 (Proxy)",
+                        53 to "53 (DNS)",
+                        22 to "22 (SSH)"
+                    )
+                    androidx.compose.foundation.lazy.LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        items(portPresets.size) { idx ->
+                            val (presetPort, presetLabel) = portPresets[idx]
+                            val isSelected = !isCustomPort && portInput == presetPort.toString()
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = {
+                                    portInput = presetPort.toString()
+                                    isCustomPort = false
+                                },
+                                label = { Text(presetLabel, style = MaterialTheme.typography.labelSmall) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                    selectedLabelColor = MaterialTheme.colorScheme.primary
+                                )
+                            )
+                        }
+                        item {
+                            FilterChip(
+                                selected = isCustomPort,
+                                onClick = { isCustomPort = true },
+                                label = { Text("Custom Port", style = MaterialTheme.typography.labelSmall) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                    selectedLabelColor = MaterialTheme.colorScheme.primary
+                                )
+                            )
+                        }
+                    }
+
+                    if (isCustomPort) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        OutlinedTextField(
+                            value = portInput,
+                            onValueChange = { portInput = it.filter { c -> c.isDigit() }.take(5) },
+                            label = { Text("Custom Port (1 - 65535)", style = MaterialTheme.typography.bodySmall) },
+                            placeholder = { Text("e.g. 8443, 3000, 21") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(8.dp)
+                        )
+                    }
+                }
+
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // Attempts / Requests Chips
+                // Attempts / Requests Chips + Custom Value
                 Text(
-                    text = if (selectedTab == PingType.HTTP) "REQUESTS" else "ATTEMPTS",
+                    text = if (selectedTab == PingType.HTTP) "REQUESTS (PROBES)" else "ATTEMPTS (PROBES)",
                     style = MaterialTheme.typography.labelSmall.copy(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         letterSpacing = 1.sp,
@@ -221,15 +389,28 @@ fun PingScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    val attemptOptions = listOf(5, 10, 20, 50, 100, 9999)
+                    val attemptOptions = listOf(5, 10, 20, 50, 100)
                     items(attemptOptions.size) { idx ->
                         val count = attemptOptions[idx]
-                        val label = if (count == 9999) "Continuous" else "$count"
-                        val isSelected = attemptCount == count
+                        val isSelected = !isCustomCount && attemptCount == count
                         FilterChip(
                             selected = isSelected,
-                            onClick = { attemptCount = count },
-                            label = { Text(label, style = MaterialTheme.typography.labelSmall) },
+                            onClick = {
+                                attemptCount = count
+                                isCustomCount = false
+                            },
+                            label = { Text("$count", style = MaterialTheme.typography.labelSmall) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                selectedLabelColor = MaterialTheme.colorScheme.primary
+                            )
+                        )
+                    }
+                    item {
+                        FilterChip(
+                            selected = isCustomCount,
+                            onClick = { isCustomCount = true },
+                            label = { Text("Custom", style = MaterialTheme.typography.labelSmall) },
                             colors = FilterChipDefaults.filterChipColors(
                                 selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
                                 selectedLabelColor = MaterialTheme.colorScheme.primary
@@ -238,11 +419,25 @@ fun PingScreen(
                     }
                 }
 
-                // ICMP Payload Chips (Only for ICMP)
+                if (isCustomCount) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    OutlinedTextField(
+                        value = customCountInput,
+                        onValueChange = { customCountInput = it.filter { c -> c.isDigit() }.take(4) },
+                        label = { Text("Custom Probe Count (1 - 1000 probes)", style = MaterialTheme.typography.bodySmall) },
+                        placeholder = { Text("e.g. 15, 30, 200") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp)
+                    )
+                }
+
+                // ICMP Payload Chips + Custom Value (Only for ICMP)
                 if (selectedTab == PingType.ICMP) {
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
                     Text(
-                        text = "ICMP PAYLOAD",
+                        text = "ICMP PAYLOAD (BYTES)",
                         style = MaterialTheme.typography.labelSmall.copy(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             letterSpacing = 1.sp,
@@ -257,16 +452,259 @@ fun PingScreen(
                         val payloadOptions = listOf(32, 64, 128, 256, 512, 1024, 1400)
                         items(payloadOptions.size) { idx ->
                             val bytes = payloadOptions[idx]
-                            val isSelected = payloadBytes == bytes
+                            val isSelected = !isCustomPayload && payloadBytes == bytes
                             FilterChip(
                                 selected = isSelected,
-                                onClick = { payloadBytes = bytes },
+                                onClick = {
+                                    payloadBytes = bytes
+                                    isCustomPayload = false
+                                },
                                 label = { Text("$bytes B", style = MaterialTheme.typography.labelSmall) },
                                 colors = FilterChipDefaults.filterChipColors(
                                     selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
                                     selectedLabelColor = MaterialTheme.colorScheme.primary
                                 )
                             )
+                        }
+                        item {
+                            FilterChip(
+                                selected = isCustomPayload,
+                                onClick = { isCustomPayload = true },
+                                label = { Text("Custom", style = MaterialTheme.typography.labelSmall) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                    selectedLabelColor = MaterialTheme.colorScheme.primary
+                                )
+                            )
+                        }
+                    }
+
+                    if (isCustomPayload) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        OutlinedTextField(
+                            value = customPayloadInput,
+                            onValueChange = { customPayloadInput = it.filter { c -> c.isDigit() }.take(5) },
+                            label = { Text("Custom Payload (16 - 65507 Bytes)", style = MaterialTheme.typography.bodySmall) },
+                            placeholder = { Text("e.g. 56, 1472, 1500") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(8.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Expandable Custom Timing & Advanced Profile Card
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { showAdvancedOptions = !showAdvancedOptions },
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Timer,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Text(
+                                        text = "Custom Timing & Diagnostic Profiles",
+                                        style = MaterialTheme.typography.labelMedium.copy(
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                    )
+                                    Text(
+                                        text = "Timeout: ${effectiveTimeout}ms • Interval: ${effectiveInterval}ms",
+                                        style = MaterialTheme.typography.bodySmall.copy(
+                                            fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    )
+                                }
+                            }
+                            Icon(
+                                imageVector = if (showAdvancedOptions) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                                contentDescription = "Toggle",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        AnimatedVisibility(visible = showAdvancedOptions) {
+                            Column(modifier = Modifier.padding(top = 12.dp)) {
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                                Spacer(modifier = Modifier.height(10.dp))
+
+                                // Quick Profiles
+                                Text(
+                                    text = "PRESET PROFILES",
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 10.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                androidx.compose.foundation.lazy.LazyRow(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    item {
+                                        AssistChip(
+                                            onClick = {
+                                                attemptCount = 5
+                                                isCustomCount = false
+                                                intervalMs = 200L
+                                                isCustomInterval = false
+                                                timeoutMs = 1000
+                                                isCustomTimeout = false
+                                            },
+                                            label = { Text("Fast · 5 probes", fontSize = 11.sp) }
+                                        )
+                                    }
+                                    item {
+                                        AssistChip(
+                                            onClick = {
+                                                attemptCount = 10
+                                                isCustomCount = false
+                                                intervalMs = 500L
+                                                isCustomInterval = false
+                                                timeoutMs = 2000
+                                                isCustomTimeout = false
+                                            },
+                                            label = { Text("Standard · 10 probes", fontSize = 11.sp) }
+                                        )
+                                    }
+                                    item {
+                                        AssistChip(
+                                            onClick = {
+                                                attemptCount = 30
+                                                isCustomCount = false
+                                                intervalMs = 250L
+                                                isCustomInterval = false
+                                                timeoutMs = 2000
+                                                isCustomTimeout = false
+                                            },
+                                            label = { Text("Deep · 30 probes", fontSize = 11.sp) }
+                                        )
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(10.dp))
+
+                                // Timeout (ms)
+                                Text(
+                                    text = "PROBE TIMEOUT",
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 10.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                androidx.compose.foundation.lazy.LazyRow(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    val timeoutOptions = listOf(1000, 2000, 3000, 5000)
+                                    items(timeoutOptions.size) { idx ->
+                                        val t = timeoutOptions[idx]
+                                        val isSelected = !isCustomTimeout && timeoutMs == t
+                                        FilterChip(
+                                            selected = isSelected,
+                                            onClick = {
+                                                timeoutMs = t
+                                                isCustomTimeout = false
+                                            },
+                                            label = { Text("${t}ms", fontSize = 11.sp) }
+                                        )
+                                    }
+                                    item {
+                                        FilterChip(
+                                            selected = isCustomTimeout,
+                                            onClick = { isCustomTimeout = true },
+                                            label = { Text("Custom", fontSize = 11.sp) }
+                                        )
+                                    }
+                                }
+
+                                if (isCustomTimeout) {
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    OutlinedTextField(
+                                        value = customTimeoutInput,
+                                        onValueChange = { customTimeoutInput = it.filter { c -> c.isDigit() }.take(5) },
+                                        label = { Text("Custom Timeout (100 - 30000 ms)", fontSize = 11.sp) },
+                                        singleLine = true,
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(8.dp)
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.height(10.dp))
+
+                                // Interval (ms)
+                                Text(
+                                    text = "PROBE INTERVAL",
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 10.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                androidx.compose.foundation.lazy.LazyRow(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    val intervalOptions = listOf(100L, 200L, 500L, 1000L)
+                                    items(intervalOptions.size) { idx ->
+                                        val iv = intervalOptions[idx]
+                                        val isSelected = !isCustomInterval && intervalMs == iv
+                                        FilterChip(
+                                            selected = isSelected,
+                                            onClick = {
+                                                intervalMs = iv
+                                                isCustomInterval = false
+                                            },
+                                            label = { Text("${iv}ms", fontSize = 11.sp) }
+                                        )
+                                    }
+                                    item {
+                                        FilterChip(
+                                            selected = isCustomInterval,
+                                            onClick = { isCustomInterval = true },
+                                            label = { Text("Custom", fontSize = 11.sp) }
+                                        )
+                                    }
+                                }
+
+                                if (isCustomInterval) {
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    OutlinedTextField(
+                                        value = customIntervalInput,
+                                        onValueChange = { customIntervalInput = it.filter { c -> c.isDigit() }.take(5) },
+                                        label = { Text("Custom Interval (20 - 10000 ms)", fontSize = 11.sp) },
+                                        singleLine = true,
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(8.dp)
+                                    )
+                                }
+                            }
                         }
                     }
                 }

@@ -1,14 +1,22 @@
 package com.netdiag.tool.ui.device
 
+import android.app.Activity
 import android.app.ActivityManager
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
 import android.content.IntentFilter
+import android.net.Uri
 import android.os.BatteryManager
 import android.os.Build
 import android.os.Environment
 import android.os.StatFs
 import android.os.SystemClock
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.core.app.ActivityCompat
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -36,7 +44,9 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.netdiag.tool.domain.model.CellData
 import com.netdiag.tool.domain.model.RadioAccessTechnology
 import com.netdiag.tool.domain.model.SimSubscription
+import com.netdiag.tool.ui.components.AppPermission
 import com.netdiag.tool.ui.components.KeyValueRow
+import com.netdiag.tool.ui.components.rememberPermissionGate
 import com.netdiag.tool.ui.dashboard.DashboardViewModel
 import com.netdiag.tool.ui.network.NeighborSort
 import com.netdiag.tool.ui.network.NetworkViewModel
@@ -53,6 +63,15 @@ enum class DeviceInfoTab(val label: String, val icon: ImageVector) {
     SOFTWARE("Software", Icons.Outlined.Android)
 }
 
+private fun Context.findActivity(): Activity? {
+    var current = this
+    while (current is ContextWrapper) {
+        if (current is Activity) return current
+        current = current.baseContext
+    }
+    return null
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DeviceInfoScreen(
@@ -62,6 +81,7 @@ fun DeviceInfoScreen(
     dashboardViewModel: DashboardViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
+    val activity = remember(context) { context.findActivity() }
     val scrollState = rememberScrollState()
 
     var selectedTab by remember { mutableStateOf(DeviceInfoTab.OVERVIEW) }
@@ -72,22 +92,107 @@ fun DeviceInfoScreen(
     val currentRat by networkViewModel.currentRat.collectAsState()
     val neighborSort by networkViewModel.neighborSort.collectAsState()
 
-    val activeSim = if (sim1.info.isDefaultData) sim1 else if (sim2.info.isDefaultData) sim2 else sim1
+    val hasPhonePermission by networkViewModel.hasPhonePermission.collectAsState()
+    val hasLocationPermission by networkViewModel.hasLocationPermission.collectAsState()
+    val hasPermissions by networkViewModel.hasPermissions.collectAsState()
+
+    var permissionRequestedOnce by rememberSaveable { mutableStateOf(false) }
+
+    val permissionGate = rememberPermissionGate()
+    val refreshWithPermissions: () -> Unit = {
+        permissionGate.require(AppPermission.PHONE, AppPermission.LOCATION) {
+            networkViewModel.checkPermissions()
+            networkViewModel.refresh()
+        }
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) {
+        permissionRequestedOnce = true
+        networkViewModel.checkPermissions()
+        networkViewModel.refresh()
+        dashboardViewModel.refresh()
+    }
+
+    val missingPermissions = remember(hasPhonePermission, hasLocationPermission) {
+        buildList {
+            if (!hasLocationPermission) add("• Location")
+            if (!hasPhonePermission) add("• Phone / SIM information")
+        }
+    }
+
+    val isPermanentlyDenied = permissionRequestedOnce && (
+        (!hasPhonePermission && activity != null && !ActivityCompat.shouldShowRequestPermissionRationale(activity, android.Manifest.permission.READ_PHONE_STATE)) ||
+        (!hasLocationPermission && activity != null && !ActivityCompat.shouldShowRequestPermissionRationale(activity, android.Manifest.permission.ACCESS_FINE_LOCATION))
+    )
+
+    val onGrantPermissions: () -> Unit = {
+        val perms = buildList {
+            if (!hasPhonePermission) add(android.Manifest.permission.READ_PHONE_STATE)
+            if (!hasLocationPermission) {
+                add(android.Manifest.permission.ACCESS_FINE_LOCATION)
+                add(android.Manifest.permission.ACCESS_COARSE_LOCATION)
+            }
+        }
+        if (perms.isNotEmpty()) {
+            permissionLauncher.launch(perms.toTypedArray())
+        }
+    }
+
+    val onOpenSettings: () -> Unit = {
+        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+            data = Uri.fromParts("package", context.packageName, null)
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        context.startActivity(intent)
+    }
+
+    val activeSim = when {
+        sim1.info.isDefaultData && sim1.info.subscriptionId != -1 -> sim1
+        sim2.info.isDefaultData && sim2.info.subscriptionId != -1 -> sim2
+        sim1.info.subscriptionId != -1 -> sim1
+        sim2.info.subscriptionId != -1 -> sim2
+        else -> null
+    }
+
+    val dataSimDisplay = when {
+        sim1.info.isDefaultData && sim1.info.subscriptionId != -1 -> "SIM 1"
+        sim2.info.isDefaultData && sim2.info.subscriptionId != -1 -> "SIM 2"
+        sim1.info.subscriptionId != -1 -> "SIM 1"
+        sim2.info.subscriptionId != -1 -> "SIM 2"
+        !hasPhonePermission -> "Permission Required"
+        else -> "No Active SIM"
+    }
+
+    val carrierDisplay = when {
+        activeSim != null && activeSim.info.carrierName.isNotBlank() && activeSim.info.carrierName != "Unknown" && activeSim.info.carrierName != "Unavailable" -> activeSim.info.carrierName
+        !hasPhonePermission -> "Permission Required"
+        else -> "Unavailable"
+    }
 
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
 
-    // Only run live RF/cell monitoring if user is on Cellular/SIM tabs AND screen is visible
+    // Run live RF/cell monitoring if user is on Cellular/SIM tabs AND screen is visible
     val needsLiveMonitoring = selectedTab in listOf(DeviceInfoTab.CELLULAR, DeviceInfoTab.SIM1, DeviceInfoTab.SIM2)
 
     DisposableEffect(lifecycleOwner, needsLiveMonitoring) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME && needsLiveMonitoring) {
-                networkViewModel.startLiveMonitoring()
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                networkViewModel.checkPermissions()
+                networkViewModel.refresh()
+                dashboardViewModel.refresh()
+                if (needsLiveMonitoring) {
+                    networkViewModel.startLiveMonitoring()
+                }
             } else if (event == androidx.lifecycle.Lifecycle.Event.ON_PAUSE) {
                 networkViewModel.stopLiveMonitoring()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
+        networkViewModel.checkPermissions()
+        networkViewModel.refresh()
+        dashboardViewModel.refresh()
         if (lifecycleOwner.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED) && needsLiveMonitoring) {
             networkViewModel.startLiveMonitoring()
         } else if (!needsLiveMonitoring) {
@@ -217,6 +322,17 @@ fun DeviceInfoScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
+            // ── Prominent Permission Banner (at TOP of Device Info) ──
+            if (missingPermissions.isNotEmpty()) {
+                DeviceInfoPermissionBanner(
+                    missingPermissions = missingPermissions,
+                    isPermanentlyDenied = isPermanentlyDenied,
+                    onGrantPermissions = onGrantPermissions,
+                    onOpenSettings = onOpenSettings
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+            }
+
             // Horizontal Tabs: Overview | SIM 1 | SIM 2 | Cellular | Battery | Hardware | Software
             LazyRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -228,7 +344,13 @@ fun DeviceInfoScreen(
                     val isSelected = selectedTab == tab
                     FilterChip(
                         selected = isSelected,
-                        onClick = { selectedTab = tab },
+                        onClick = {
+                            selectedTab = tab
+                            // SIM / Cellular tabs show telemetry that needs Phone + Location
+                            if (tab == DeviceInfoTab.SIM1 || tab == DeviceInfoTab.SIM2 || tab == DeviceInfoTab.CELLULAR) {
+                                refreshWithPermissions()
+                            }
+                        },
                         leadingIcon = {
                             Icon(
                                 imageVector = tab.icon,
@@ -253,7 +375,7 @@ fun DeviceInfoScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(4.dp))
 
             Column(
                 modifier = Modifier
@@ -270,23 +392,42 @@ fun DeviceInfoScreen(
                             storageSummary = "$usedStorageGb / $totalStorageGb",
                             batterySummary = "$batteryPct% • ${if (isCharging) "Charging" else "Discharging"}",
                             activeSim = activeSim,
+                            carrierDisplay = carrierDisplay,
+                            dataSimDisplay = dataSimDisplay,
+                            hasPhonePermission = hasPhonePermission,
+                            hasLocationPermission = hasLocationPermission,
                             networkState = networkState,
                             onGoToCellular = { selectedTab = DeviceInfoTab.CELLULAR }
                         )
                     }
                     DeviceInfoTab.SIM1 -> {
-                        SimDetailsSection(title = "SIM 1 TELEMETRY", sim = sim1)
+                        SimDetailsSection(
+                            title = "SIM 1 TELEMETRY",
+                            sim = sim1,
+                            hasPhonePermission = hasPhonePermission,
+                            isPermanentlyDenied = isPermanentlyDenied,
+                            onRequestPermission = onGrantPermissions,
+                            onOpenSettings = onOpenSettings
+                        )
                     }
                     DeviceInfoTab.SIM2 -> {
-                        SimDetailsSection(title = "SIM 2 TELEMETRY", sim = sim2)
+                        SimDetailsSection(
+                            title = "SIM 2 TELEMETRY",
+                            sim = sim2,
+                            hasPhonePermission = hasPhonePermission,
+                            isPermanentlyDenied = isPermanentlyDenied,
+                            onRequestPermission = onGrantPermissions,
+                            onOpenSettings = onOpenSettings
+                        )
                     }
                     DeviceInfoTab.CELLULAR -> {
                         CellularRadioSection(
-                            sim = activeSim,
+                            sim = activeSim ?: sim1,
                             rat = currentRat,
+                            hasLocationPermission = hasLocationPermission,
                             neighborSort = neighborSort,
                             onSortChanged = { networkViewModel.setNeighborSort(it) },
-                            onRefresh = { networkViewModel.refresh() }
+                            onRefresh = refreshWithPermissions
                         )
                     }
                     DeviceInfoTab.BATTERY -> {
@@ -336,7 +477,11 @@ private fun OverviewSection(
     ramSummary: String,
     storageSummary: String,
     batterySummary: String,
-    activeSim: SimSubscription,
+    activeSim: SimSubscription?,
+    carrierDisplay: String,
+    dataSimDisplay: String,
+    hasPhonePermission: Boolean,
+    hasLocationPermission: Boolean,
     networkState: com.netdiag.tool.domain.model.NetworkState,
     onGoToCellular: () -> Unit
 ) {
@@ -385,10 +530,14 @@ private fun OverviewSection(
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             KeyValueRow(label = "Transport", value = networkState.transport)
-            KeyValueRow(label = "Carrier", value = activeSim.info.carrierName.ifBlank { "Unknown" }, isMonospace = false)
-            val phoneDisplay = if (!activeSim.info.msisdn.isNullOrBlank()) activeSim.info.msisdn else "Restricted by carrier / SIM"
+            KeyValueRow(label = "Carrier", value = carrierDisplay, isMonospace = false)
+            val phoneDisplay = when {
+                activeSim != null && !activeSim.info.msisdn.isNullOrBlank() -> activeSim.info.msisdn
+                !hasPhonePermission -> "Permission Required"
+                else -> "Unavailable (Not provided by carrier / SIM)"
+            }
             KeyValueRow(label = "Phone Number", value = phoneDisplay, isMonospace = false)
-            KeyValueRow(label = "Data SIM", value = "SIM ${activeSim.info.slotIndex + 1}")
+            KeyValueRow(label = "Data SIM", value = dataSimDisplay)
             KeyValueRow(label = "IPv4 Address", value = networkState.ipv4 ?: "Not assigned")
             KeyValueRow(label = "Default Gateway", value = networkState.gateway ?: "N/A")
         }
@@ -396,7 +545,7 @@ private fun OverviewSection(
 
     Spacer(modifier = Modifier.height(16.dp))
 
-    val cell = activeSim.servingCell
+    val cell = activeSim?.servingCell
     Text(
         text = "RADIO SIGNAL (2×2 GRID)",
         style = MaterialTheme.typography.titleSmall.copy(
@@ -407,7 +556,7 @@ private fun OverviewSection(
 
     Spacer(modifier = Modifier.height(10.dp))
 
-    Signal2x2Grid(cell = cell)
+    Signal2x2Grid(cell = cell, hasLocationPermission = hasLocationPermission)
 
     Spacer(modifier = Modifier.height(16.dp))
 
@@ -427,11 +576,13 @@ private fun OverviewSection(
 }
 
 @Composable
-fun Signal2x2Grid(cell: CellData?) {
+fun Signal2x2Grid(cell: CellData?, hasLocationPermission: Boolean = true) {
     val rsrpVal = cell?.ssRsrp ?: cell?.rsrp
     val rsrqVal = cell?.ssRsrq ?: cell?.rsrq
     val rssiVal = cell?.rssi
     val sinrVal = cell?.ssSinr ?: cell?.sinr
+
+    val fallbackText = if (!hasLocationPermission) "Permission Required" else "Unavailable"
 
     Surface(
         shape = RoundedCornerShape(12.dp),
@@ -441,17 +592,17 @@ fun Signal2x2Grid(cell: CellData?) {
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                MetricCell(label = "RSRP", value = rsrpVal?.let { "$it dBm" } ?: "N/A", modifier = Modifier.weight(1f))
+                MetricCell(label = "RSRP", value = rsrpVal?.let { "$it dBm" } ?: fallbackText, modifier = Modifier.weight(1f))
                 Spacer(modifier = Modifier.width(16.dp))
-                MetricCell(label = "RSRQ", value = rsrqVal?.let { "$it dB" } ?: "N/A", modifier = Modifier.weight(1f))
+                MetricCell(label = "RSRQ", value = rsrqVal?.let { "$it dB" } ?: fallbackText, modifier = Modifier.weight(1f))
             }
             Spacer(modifier = Modifier.height(14.dp))
             HorizontalDivider(color = MaterialTheme.colorScheme.outline, thickness = 0.5.dp)
             Spacer(modifier = Modifier.height(14.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                MetricCell(label = "RSSI", value = rssiVal?.let { "$it dBm" } ?: "N/A", modifier = Modifier.weight(1f))
+                MetricCell(label = "RSSI", value = rssiVal?.let { "$it dBm" } ?: fallbackText, modifier = Modifier.weight(1f))
                 Spacer(modifier = Modifier.width(16.dp))
-                MetricCell(label = "SINR", value = sinrVal?.let { "${it.toInt()} dB" } ?: "N/A", modifier = Modifier.weight(1f))
+                MetricCell(label = "SINR", value = sinrVal?.let { "${it.toInt()} dB" } ?: fallbackText, modifier = Modifier.weight(1f))
             }
         }
     }
@@ -474,7 +625,104 @@ private fun MetricCell(label: String, value: String, modifier: Modifier = Modifi
 }
 
 @Composable
-private fun SimDetailsSection(title: String, sim: SimSubscription) {
+private fun DeviceInfoPermissionBanner(
+    missingPermissions: List<String>,
+    isPermanentlyDenied: Boolean,
+    onGrantPermissions: () -> Unit,
+    onOpenSettings: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.9f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 6.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Outlined.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Cellular Permissions Required",
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            if (isPermanentlyDenied) {
+                Text(
+                    text = "Please enable the required permissions from Android Settings.",
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        lineHeight = 18.sp
+                    )
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                missingPermissions.forEach { perm ->
+                    Text(
+                        text = perm,
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                    )
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+                Button(
+                    onClick = onOpenSettings,
+                    shape = RoundedCornerShape(8.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Open Settings", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
+                }
+            } else {
+                Text(
+                    text = "Cellular diagnostics require the following permissions to show SIM and network information.",
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        lineHeight = 18.sp
+                    )
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                missingPermissions.forEach { perm ->
+                    Text(
+                        text = perm,
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                    )
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+                Button(
+                    onClick = onGrantPermissions,
+                    shape = RoundedCornerShape(8.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Grant Permissions", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SimDetailsSection(
+    title: String,
+    sim: SimSubscription,
+    hasPhonePermission: Boolean,
+    isPermanentlyDenied: Boolean,
+    onRequestPermission: () -> Unit,
+    onOpenSettings: () -> Unit
+) {
     Text(
         text = title,
         style = MaterialTheme.typography.titleSmall.copy(
@@ -492,12 +740,39 @@ private fun SimDetailsSection(title: String, sim: SimSubscription) {
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text(
-                text = "No SIM card inserted or subscription inactive in this slot.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(16.dp),
-                style = MaterialTheme.typography.bodyMedium
-            )
+            Column(modifier = Modifier.padding(16.dp)) {
+                if (!hasPhonePermission) {
+                    Text(
+                        text = "Phone permission is required to detect SIM card subscriptions in this slot.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    if (isPermanentlyDenied) {
+                        Button(
+                            onClick = onOpenSettings,
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                        ) {
+                            Text("Open Settings", style = MaterialTheme.typography.labelMedium)
+                        }
+                    } else {
+                        Button(
+                            onClick = onRequestPermission,
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                        ) {
+                            Text("Grant Phone Permission", style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
+                } else {
+                    Text(
+                        text = "No SIM card inserted or subscription inactive in this slot.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            }
         }
         return
     }
@@ -559,6 +834,7 @@ private fun SimDetailsSection(title: String, sim: SimSubscription) {
 private fun CellularRadioSection(
     sim: SimSubscription,
     rat: RadioAccessTechnology,
+    hasLocationPermission: Boolean,
     neighborSort: NeighborSort,
     onSortChanged: (NeighborSort) -> Unit,
     onRefresh: () -> Unit
@@ -582,7 +858,7 @@ private fun CellularRadioSection(
 
     Spacer(modifier = Modifier.height(10.dp))
 
-    Signal2x2Grid(cell = sim.servingCell)
+    Signal2x2Grid(cell = sim.servingCell, hasLocationPermission = hasLocationPermission)
 
     Spacer(modifier = Modifier.height(16.dp))
 
@@ -597,6 +873,15 @@ private fun CellularRadioSection(
     Spacer(modifier = Modifier.height(10.dp))
 
     val cell = sim.servingCell
+    val fallback = if (!hasLocationPermission) "Permission Required" else "N/A"
+    val archValue = when {
+        !hasLocationPermission && (rat == RadioAccessTechnology.NR_SA || rat == RadioAccessTechnology.NR_NSA) -> "Permission Required"
+        sim.nsaMode != null -> sim.nsaMode
+        rat == RadioAccessTechnology.NR_SA -> "Standalone (SA)"
+        rat == RadioAccessTechnology.NR_NSA -> "Non-Standalone (NSA)"
+        else -> "N/A"
+    }
+
     Surface(
         shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surface,
@@ -604,14 +889,14 @@ private fun CellularRadioSection(
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            KeyValueRow(label = "5G Architecture", value = sim.nsaMode ?: (if (rat == RadioAccessTechnology.NR_SA) "Standalone SA" else "N/A"))
-            KeyValueRow(label = "Primary Band", value = cell?.band ?: "N/A")
-            KeyValueRow(label = "Physical Cell ID (PCI)", value = cell?.pci?.toString() ?: "N/A")
-            KeyValueRow(label = "Tracking Area Code (TAC)", value = cell?.tac?.toString() ?: "N/A")
-            KeyValueRow(label = "Cell Identity (ECI/NCI)", value = cell?.cellId?.toString() ?: "N/A")
-            KeyValueRow(label = "eNodeB / gNodeB ID", value = cell?.enbId?.toString() ?: "N/A")
-            KeyValueRow(label = "Sector ID", value = cell?.sectorId?.toString() ?: "N/A")
-            KeyValueRow(label = "ARFCN / EARFCN", value = cell?.arfcn?.toString() ?: "N/A")
+            KeyValueRow(label = "5G Architecture", value = archValue)
+            KeyValueRow(label = "Primary Band", value = cell?.band ?: fallback)
+            KeyValueRow(label = "Physical Cell ID (PCI)", value = cell?.pci?.toString() ?: fallback)
+            KeyValueRow(label = "Tracking Area Code (TAC)", value = cell?.tac?.toString() ?: fallback)
+            KeyValueRow(label = "Cell Identity (ECI/NCI)", value = cell?.cellId?.toString() ?: fallback)
+            KeyValueRow(label = "eNodeB / gNodeB ID", value = cell?.enbId?.toString() ?: fallback)
+            KeyValueRow(label = "Sector ID", value = cell?.sectorId?.toString() ?: fallback)
+            KeyValueRow(label = "ARFCN / EARFCN", value = cell?.arfcn?.toString() ?: fallback)
         }
     }
 
@@ -657,7 +942,8 @@ private fun CellularRadioSection(
             modifier = Modifier.fillMaxWidth()
         ) {
             Text(
-                text = "No neighbour cells reported by modem. Modem may restrict neighbour scanning to conserve battery.",
+                text = if (!hasLocationPermission) "Location permission is required to detect neighbour cell towers."
+                       else "No neighbour cells reported by modem. Modem may restrict neighbour scanning to conserve battery.",
                 style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
                 modifier = Modifier.padding(14.dp)
             )
