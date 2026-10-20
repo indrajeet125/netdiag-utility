@@ -188,7 +188,7 @@ fun SettingsScreen(
                 HorizontalDivider(color = MaterialTheme.colorScheme.outline, thickness = 1.dp)
                 SettingsClickableRow(
                     title = "Cellular Poll Interval",
-                    subtitle = "2000 ms (balanced)",
+                    subtitle = "Auto: 5000 ms (battery friendly)",
                     icon = Icons.Outlined.Refresh,
                     onClick = {}
                 )
@@ -196,20 +196,15 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // Group 4: Permissions & Setup Reset
-            SettingsGroup(title = "SETUP & PERMISSIONS") {
-                SettingsClickableRow(
-                    title = "App Permissions Center",
-                    subtitle = "Manage Android system runtime permissions",
-                    icon = Icons.Outlined.Security,
-                    onClick = {
-                        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                            data = Uri.fromParts("package", context.packageName, null)
-                        }
-                        context.startActivity(intent)
-                    }
-                )
-                HorizontalDivider(color = MaterialTheme.colorScheme.outline, thickness = 1.dp)
+            // Group 4: Every permission with live status and Allow / Revoke
+            SettingsGroup(title = "PERMISSIONS") {
+                PermissionManagerSection()
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // Group 5: Setup Reset
+            SettingsGroup(title = "SETUP") {
                 SettingsClickableRow(
                     title = "Reset Onboarding Experience",
                     subtitle = "Re-launch the introductory walkthrough & checklist",
@@ -226,7 +221,10 @@ fun SettingsScreen(
             // Group 5: About
             SettingsGroup(title = "ABOUT") {
                 KeyValueRow(label = "Application", value = "Network Tools", isMonospace = false)
-                KeyValueRow(label = "Version", value = "1.0.0")
+                val versionName = remember {
+                    try { context.packageManager.getPackageInfo(context.packageName, 0).versionName } catch (_: Exception) { null }
+                }
+                KeyValueRow(label = "Version", value = versionName ?: "Unknown")
                 KeyValueRow(label = "Architecture", value = "Clean Architecture + Hilt", isMonospace = false)
             }
 
