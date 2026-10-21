@@ -202,7 +202,7 @@ fun TracerouteSection(
         if (isRunning) {
             Button(
                 onClick = { stopTrace() },
-                modifier = Modifier.fillMaxWidth().height(48.dp),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                 shape = RoundedCornerShape(10.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = StatusRed,
@@ -215,7 +215,7 @@ fun TracerouteSection(
             Button(
                 onClick = { startTrace() },
                 enabled = targetInput.isNotBlank(),
-                modifier = Modifier.fillMaxWidth().height(48.dp),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                 shape = RoundedCornerShape(10.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.primary,

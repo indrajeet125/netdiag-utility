@@ -129,7 +129,7 @@ fun PermissionChecklistScreen(
                         onClick = onContinue,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(52.dp),
+                            .heightIn(min = 52.dp),
                         shape = RoundedCornerShape(10.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = if (canProceed) AccentCyan else SurfaceElevated,
@@ -352,7 +352,7 @@ fun PermissionChecklistScreen(
                     },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(50.dp),
+                        .heightIn(min = 50.dp),
                     shape = RoundedCornerShape(10.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = AccentCyan,

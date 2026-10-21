@@ -213,7 +213,7 @@ fun PortTestSection(
             enabled = !isRunning && hostInput.isNotBlank(),
             modifier = Modifier
                 .fillMaxWidth()
-                .height(50.dp),
+                .heightIn(min = 50.dp),
             shape = RoundedCornerShape(10.dp),
             colors = ButtonDefaults.buttonColors(
                 containerColor = MaterialTheme.colorScheme.primary,

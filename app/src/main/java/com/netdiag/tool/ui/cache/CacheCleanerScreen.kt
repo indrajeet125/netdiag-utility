@@ -458,7 +458,7 @@ fun CacheCleanerScreen(
                     onClick = { viewModel.cleanDirectDeviceCache() },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(48.dp),
+                        .heightIn(min = 48.dp),
                     shape = RoundedCornerShape(10.dp),
                     enabled = !isCleaning,
                     colors = ButtonDefaults.buttonColors(
@@ -494,7 +494,7 @@ fun CacheCleanerScreen(
                         },
                         modifier = Modifier
                             .weight(1f)
-                            .height(44.dp),
+                            .heightIn(min = 44.dp),
                         shape = RoundedCornerShape(8.dp),
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
                     ) {
@@ -519,7 +519,7 @@ fun CacheCleanerScreen(
                         },
                         modifier = Modifier
                             .weight(1f)
-                            .height(44.dp),
+                            .heightIn(min = 44.dp),
                         shape = RoundedCornerShape(8.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.primary,
@@ -541,7 +541,7 @@ fun CacheCleanerScreen(
                     onValueChange = { viewModel.setSearchQuery(it) },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(54.dp),
+                        .heightIn(min = 54.dp),
                     placeholder = {
                         Text(
                             text = "Search installed apps...",
@@ -855,7 +855,7 @@ fun CacheCleanerScreen(
                         },
                         modifier = Modifier
                             .weight(1f)
-                            .height(48.dp),
+                            .heightIn(min = 48.dp),
                         shape = RoundedCornerShape(8.dp),
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
                     ) {
@@ -872,7 +872,7 @@ fun CacheCleanerScreen(
                         },
                         modifier = Modifier
                             .weight(1f)
-                            .height(48.dp),
+                            .heightIn(min = 48.dp),
                         shape = RoundedCornerShape(8.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.primary,

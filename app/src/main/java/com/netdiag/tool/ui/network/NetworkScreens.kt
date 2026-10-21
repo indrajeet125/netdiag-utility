@@ -331,7 +331,7 @@ fun NetworkScreen(
                                             permissionLauncher.launch(permsToRequest.toTypedArray())
                                         }
                                     },
-                                    modifier = Modifier.weight(1f).height(42.dp),
+                                    modifier = Modifier.weight(1f).heightIn(min = 42.dp),
                                     shape = RoundedCornerShape(8.dp),
                                     colors = ButtonDefaults.buttonColors(
                                         containerColor = AccentCyan,
@@ -352,7 +352,7 @@ fun NetworkScreen(
                                         }
                                         context.startActivity(intent)
                                     },
-                                    modifier = Modifier.weight(1f).height(42.dp),
+                                    modifier = Modifier.weight(1f).heightIn(min = 42.dp),
                                     shape = RoundedCornerShape(8.dp),
                                     border = BorderStroke(1.dp, BorderSubtle),
                                     colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary)
@@ -2149,7 +2149,7 @@ fun NetworkModeScreen(
                 },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(48.dp),
+                    .heightIn(min = 48.dp),
                 shape = RoundedCornerShape(8.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = AccentCyan,

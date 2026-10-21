@@ -381,7 +381,7 @@ fun WebTestSection(
                 if (selectedProtocol == WebProtocol.FTP) runFtpTest() else runHttpTest()
             },
             enabled = !isRunning,
-            modifier = Modifier.fillMaxWidth().height(50.dp),
+            modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
             shape = RoundedCornerShape(10.dp),
             colors = ButtonDefaults.buttonColors(
                 containerColor = MaterialTheme.colorScheme.primary,

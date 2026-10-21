@@ -145,7 +145,7 @@ fun SpeedTestScreen(
                 onClick = { viewModel.startTest() },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(48.dp),
+                    .heightIn(min = 48.dp),
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.primary,
@@ -171,7 +171,7 @@ fun SpeedTestScreen(
                 onClick = { viewModel.stopTest() },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(48.dp),
+                    .heightIn(min = 48.dp),
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = StatusRed,
@@ -200,8 +200,11 @@ fun SpeedTestScreen(
         SpeedometerGauge(
             currentSpeed = currentSpeed,
             phase = phase,
+            // Scales down on narrow phones; never larger than the original 280dp
             modifier = Modifier
-                .size(280.dp)
+                .widthIn(max = 280.dp)
+                .fillMaxWidth()
+                .aspectRatio(1f)
                 .padding(8.dp)
         )
 
@@ -315,7 +318,7 @@ fun SpeedTestScreen(
                 onClick = { viewModel.startTest() },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(52.dp),
+                    .heightIn(min = 52.dp),
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.primary,
@@ -340,7 +343,7 @@ fun SpeedTestScreen(
                 onClick = { viewModel.stopTest() },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(52.dp),
+                    .heightIn(min = 52.dp),
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = StatusRed,

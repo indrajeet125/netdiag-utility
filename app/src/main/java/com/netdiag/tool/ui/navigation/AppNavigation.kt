@@ -14,6 +14,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -94,23 +95,59 @@ fun AppNavigation(
     // Show bottom bar only on the 4 primary destinations
     val showBottomBar = currentRoute in listOf("home", "tests", "device_info", "tools") || currentRoute?.startsWith("tests?") == true
 
-    // One navigation system: the bottom bar. Everything else is reached from a bottom tab.
-    run {
+    fun isTabSelected(route: String): Boolean =
+        if (route == "tests") currentRoute == "tests" || currentRoute?.startsWith("tests?") == true
+        else currentRoute == route
+
+    // Wide windows (tablets, open foldables, phones in landscape) get a side rail instead of the
+    // bottom bar, and screen content is centred at a readable width instead of stretching edge to edge.
+    val isWide = LocalConfiguration.current.screenWidthDp >= 600
+
+    // One navigation system: the tab bar (bottom bar or side rail). Everything else is reached from a tab.
+    Row(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+    ) {
+        if (showBottomBar && isWide) {
+            NavigationRail(
+                containerColor = MaterialTheme.colorScheme.surface,
+                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.fillMaxHeight()
+            ) {
+                Spacer(modifier = Modifier.weight(1f))
+                primaryBottomItems.forEach { destination ->
+                    NavigationRailItem(
+                        selected = isTabSelected(destination.route),
+                        onClick = { go(destination.route) },
+                        icon = { Icon(imageVector = destination.icon, contentDescription = destination.label) },
+                        label = { Text(text = destination.label, style = MaterialTheme.typography.labelSmall) },
+                        colors = NavigationRailItemDefaults.colors(
+                            selectedIconColor = MaterialTheme.colorScheme.primary,
+                            selectedTextColor = MaterialTheme.colorScheme.primary,
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            indicatorColor = MaterialTheme.colorScheme.primaryContainer
+                        )
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+                Spacer(modifier = Modifier.weight(1f))
+            }
+        }
+
         Scaffold(
+            modifier = Modifier.weight(1f),
             containerColor = MaterialTheme.colorScheme.background,
             bottomBar = {
-                if (showBottomBar) {
+                if (showBottomBar && !isWide) {
                     NavigationBar(
                         containerColor = MaterialTheme.colorScheme.surface,
                         contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                         tonalElevation = 0.dp
                     ) {
                         primaryBottomItems.forEach { destination ->
-                            val isSelected = if (destination.route == "tests") {
-                                currentRoute == "tests" || currentRoute?.startsWith("tests?") == true
-                            } else {
-                                currentRoute == destination.route
-                            }
+                            val isSelected = isTabSelected(destination.route)
 
                             NavigationBarItem(
                                 selected = isSelected,
@@ -140,10 +177,19 @@ fun AppNavigation(
                 }
             }
         ) { padding ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+                contentAlignment = Alignment.TopCenter
+            ) {
             NavHost(
                 navController = navController,
                 startDestination = "splash",
-                modifier = Modifier.padding(padding)
+                // Readable max width on tablets / landscape; full width on phones (always < 840dp)
+                modifier = Modifier
+                    .widthIn(max = 840.dp)
+                    .fillMaxSize()
             ) {
                 // ── Onboarding Journey ──
                 composable("splash") {
@@ -364,6 +410,7 @@ fun AppNavigation(
                         }
                     )
                 }
+            }
             }
         }
     }

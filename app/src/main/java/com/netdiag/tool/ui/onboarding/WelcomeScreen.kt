@@ -150,7 +150,7 @@ fun WelcomeScreen(
                 onClick = onGetStarted,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(52.dp),
+                    .heightIn(min = 52.dp),
                 shape = RoundedCornerShape(10.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = AccentCyan,

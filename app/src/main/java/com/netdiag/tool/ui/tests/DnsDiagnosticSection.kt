@@ -127,7 +127,7 @@ fun DnsDiagnosticSection(
         Button(
             onClick = { runDnsLookup() },
             enabled = !isRunning && hostInput.isNotBlank(),
-            modifier = Modifier.fillMaxWidth().height(48.dp),
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
             shape = RoundedCornerShape(10.dp),
             colors = ButtonDefaults.buttonColors(
                 containerColor = MaterialTheme.colorScheme.primary,

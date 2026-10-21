@@ -201,7 +201,7 @@ fun ConnectionHealthCard(
                 onClick = onRunCheck,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(42.dp),
+                    .heightIn(min = 42.dp),
                 shape = RoundedCornerShape(8.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = SurfaceElevated,
