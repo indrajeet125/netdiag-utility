@@ -61,11 +61,28 @@ fun AppNavigation(
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
 
+    // Every in-app navigation goes through go() so the back stack stays predictable:
+    //  - Bottom tabs keep at most one entry above Home: Back from any tab returns to Home, then exits.
+    //    (popUpTo the graph start doesn't work here: "splash" is popped after launch, so it was a no-op
+    //    and tabs piled up.)
+    //  - Any other screen is never stacked twice when tapped repeatedly.
+    val bottomRoutes = remember { setOf("home", "tests", "device_info", "tools") }
+    fun go(route: String) {
+        if (route.substringBefore('?') in bottomRoutes) {
+            navController.navigate(route) {
+                popUpTo("home") { saveState = true }
+                launchSingleTop = true
+                // A ?tab= link must open that tab, not restore the previously saved Tests state
+                restoreState = !route.contains('?')
+            }
+        } else {
+            navController.navigate(route) { launchSingleTop = true }
+        }
+    }
+
     LaunchedEffect(initialTargetRoute) {
         if (!initialTargetRoute.isNullOrBlank()) {
-            navController.navigate(initialTargetRoute) {
-                launchSingleTop = true
-            }
+            go(initialTargetRoute)
             onRouteHandled()
         }
     }
@@ -97,15 +114,7 @@ fun AppNavigation(
 
                             NavigationBarItem(
                                 selected = isSelected,
-                                onClick = {
-                                    navController.navigate(destination.route) {
-                                        popUpTo(navController.graph.findStartDestination().id) {
-                                            saveState = true
-                                        }
-                                        launchSingleTop = true
-                                        restoreState = true
-                                    }
-                                },
+                                onClick = { go(destination.route) },
                                 icon = {
                                     Icon(
                                         imageVector = destination.icon,
@@ -160,7 +169,7 @@ fun AppNavigation(
 
                 composable("welcome") {
                     WelcomeScreen(
-                        onGetStarted = { navController.navigate("onboarding_slides") },
+                        onGetStarted = { go("onboarding_slides") },
                         onSkip = {
                             onboardingViewModel.completeOnboarding()
                             navController.navigate("home") {
@@ -172,7 +181,7 @@ fun AppNavigation(
 
                 composable("onboarding_slides") {
                     FeatureSlidesScreen(
-                        onFinished = { navController.navigate("permission_checklist") },
+                        onFinished = { go("permission_checklist") },
                         onSkip = {
                             onboardingViewModel.completeOnboarding()
                             navController.navigate("home") {
@@ -185,7 +194,7 @@ fun AppNavigation(
                 composable("permission_checklist") {
                     PermissionChecklistScreen(
                         viewModel = onboardingViewModel,
-                        onContinue = { navController.navigate("onetap_setup") },
+                        onContinue = { go("onetap_setup") },
                         onSkip = {
                             onboardingViewModel.completeOnboarding()
                             navController.navigate("home") {
@@ -198,7 +207,7 @@ fun AppNavigation(
                 composable("onetap_setup") {
                     OneTapSetupScreen(
                         viewModel = onboardingViewModel,
-                        onContinue = { navController.navigate("setup_complete") },
+                        onContinue = { go("setup_complete") },
                         onSkip = {
                             onboardingViewModel.completeOnboarding()
                             navController.navigate("home") {
@@ -217,7 +226,7 @@ fun AppNavigation(
                             }
                         },
                         onReviewPermissions = {
-                            navController.navigate("permission_checklist")
+                            go("permission_checklist")
                         }
                     )
                 }
@@ -225,15 +234,15 @@ fun AppNavigation(
                 // ── 4 Primary Bottom Destinations ──
                 composable("home") {
                     DashboardScreen(
-                        onNavigateToPing = { navController.navigate("tests") },
-                        onNavigateToNetwork = { navController.navigate("network") },
-                        onNavigateToSim = { navController.navigate("network") },
-                        onNavigateToNetworkMode = { navController.navigate("network_mode") },
-                        onNavigateToSettings = { navController.navigate("settings") },
-                        onNavigateToOneTap = { navController.navigate("onetap_setup") },
-                        onNavigateToDeviceInfo = { navController.navigate("device_info") },
-                        onNavigateToSimIdentity = { navController.navigate("sim_identity") },
-                        onNavigateToRoute = { route -> navController.navigate(route) }
+                        onNavigateToPing = { go("tests") },
+                        onNavigateToNetwork = { go("network") },
+                        onNavigateToSim = { go("network") },
+                        onNavigateToNetworkMode = { go("network_mode") },
+                        onNavigateToSettings = { go("settings") },
+                        onNavigateToOneTap = { go("onetap_setup") },
+                        onNavigateToDeviceInfo = { go("device_info") },
+                        onNavigateToSimIdentity = { go("sim_identity") },
+                        onNavigateToRoute = { route -> go(route) }
                     )
                 }
 
@@ -251,7 +260,7 @@ fun AppNavigation(
                         ?: TestTab.PING
                     TestsScreen(
                         initialTab = tab,
-                        onOpenSettings = { navController.navigate("settings") }
+                        onOpenSettings = { go("settings") }
                     )
                 }
 
@@ -261,14 +270,14 @@ fun AppNavigation(
 
                 composable("tools") {
                     ToolsScreen(
-                        onNavigateToOneTap = { navController.navigate("onetap_setup") },
-                        onNavigateToNetworkMode = { navController.navigate("network_mode") },
-                        onNavigateToCacheCleaner = { navController.navigate("cache_cleaner") },
-                        onNavigateToIpInfo = { navController.navigate("ip_info") },
-                        onNavigateToSubnetCalculator = { navController.navigate("subnet_calculator") },
-                        onNavigateToSignal = { navController.navigate("network") },
-                        onNavigateToSimIdentity = { navController.navigate("sim_identity") },
-                        onNavigateToSettings = { navController.navigate("settings") },
+                        onNavigateToOneTap = { go("onetap_setup") },
+                        onNavigateToNetworkMode = { go("network_mode") },
+                        onNavigateToCacheCleaner = { go("cache_cleaner") },
+                        onNavigateToIpInfo = { go("ip_info") },
+                        onNavigateToSubnetCalculator = { go("subnet_calculator") },
+                        onNavigateToSignal = { go("network") },
+                        onNavigateToSimIdentity = { go("sim_identity") },
+                        onNavigateToSettings = { go("settings") },
                         preferencesRepository = preferencesRepository
                     )
                 }
@@ -310,7 +319,7 @@ fun AppNavigation(
                 composable("device_info") {
                     com.netdiag.tool.ui.device.DeviceInfoScreen(
                         onNavigateBack = null,
-                        onNavigateToSettings = { navController.navigate("settings") }
+                        onNavigateToSettings = { go("settings") }
                     )
                 }
 
