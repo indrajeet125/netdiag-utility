@@ -340,7 +340,28 @@ class OneTapAccessibilityService : AccessibilityService() {
     private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private var retryRunnable: Runnable? = null
     private var retryCount = 0
-    private val MAX_RETRIES = 12 // ~12 * 400ms = 4.8s timeout
+    private val MAX_RETRIES = 12 // ~12 * 400ms = 4.8s timeout per step
+    private var countedPackage: String? = null
+
+    // Button labels exactly as THIS phone's Settings app shows them (any language, OEM wording),
+    // read from Settings' own string resources. English fallbacks cover OEMs that renamed the resources.
+    private val storageLabels: List<String> by lazy {
+        settingsStrings("storage_settings_for_app", "storage_settings", "storage_label") +
+            listOf("Storage & cache", "Storage and cache", "Storage usage", "Storage")
+    }
+    private val clearCacheLabels: List<String> by lazy {
+        settingsStrings("clear_cache_btn_text") + listOf("Clear cache", "Clear Cache")
+    }
+
+    private fun settingsStrings(vararg names: String): List<String> = try {
+        val res = packageManager.getResourcesForApplication("com.android.settings")
+        names.mapNotNull { name ->
+            val id = res.getIdentifier(name, "string", "com.android.settings")
+            if (id != 0) res.getString(id).trim().takeIf { it.isNotEmpty() } else null
+        }.distinct().also { android.util.Log.d("CACHE", "[CACHE][A11Y] settings labels ${names.first()} -> $it") }
+    } catch (_: Exception) {
+        emptyList()
+    }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (!isAutoClearActive || event == null) return
@@ -357,6 +378,12 @@ class OneTapAccessibilityService : AccessibilityService() {
 
         // Prevent duplicate action dispatch
         if (isActionInProgress) return
+
+        // Each app gets its own retry budget (the counter used to carry over and skip later apps)
+        if (countedPackage != targetPkg) {
+            countedPackage = targetPkg
+            retryCount = 0
+        }
 
         when (currentStep) {
             A11yCleanStep.WAITING_FOR_APP_INFO, A11yCleanStep.WAITING_FOR_STORAGE -> {
@@ -375,28 +402,29 @@ class OneTapAccessibilityService : AccessibilityService() {
         if (isActionInProgress) return
         val rootNode = rootInActiveWindow ?: return
 
-        val storageNode = findNodeByText(rootNode, listOf("Storage & cache", "Storage and cache", "Storage", "Internal shared storage"))
+        val storageNode = findNodeByText(rootNode, storageLabels)
         if (storageNode != null) {
             android.util.Log.d("CACHE", "[CACHE][A11Y] package=$targetPkg state=WAITING_FOR_STORAGE nodeFound=true")
             isActionInProgress = true
+            retryCount = 0
             currentStep = A11yCleanStep.STORAGE_CLICKED
 
-            // Human delay: 800-1100ms before clicking storage
+            // Short settle before clicking; slow phones are covered by the retry loop, not long fixed waits
             mainHandler.postDelayed({
                 val clicked = performNodeClick(storageNode)
                 android.util.Log.d("CACHE", "[CACHE][A11Y] package=$targetPkg action=CLICK_STORAGE success=$clicked")
                 if (clicked) {
                     currentStep = A11yCleanStep.WAITING_FOR_CLEAR_CACHE
-                    // Delay 1000-1200ms for Storage screen to open and settle
+                    // Let the Storage screen open; window events / retries pick up the button as soon as it renders
                     mainHandler.postDelayed({
                         isActionInProgress = false
                         scheduleClearCacheRetry(targetPkg)
-                    }, 1100)
+                    }, 500)
                 } else {
                     isActionInProgress = false
                     currentStep = A11yCleanStep.WAITING_FOR_STORAGE
                 }
-            }, 850)
+            }, 300)
         } else {
             // UI element not yet rendered: schedule quick retry
             scheduleStorageRetry(targetPkg)
@@ -426,8 +454,9 @@ class OneTapAccessibilityService : AccessibilityService() {
         if (isActionInProgress) return
         val rootNode = rootInActiveWindow ?: return
 
-        val clearCacheNode = findNodeByText(rootNode, listOf("Clear cache", "Clear Cache"))
+        val clearCacheNode = findNodeByText(rootNode, clearCacheLabels)
         if (clearCacheNode != null) {
+            retryCount = 0
             val isEnabled = clearCacheNode.isEnabled || clearCacheNode.parent?.isEnabled == true
             android.util.Log.d("CACHE", "[CACHE][A11Y] package=$targetPkg state=WAITING_FOR_CLEAR_CACHE nodeFound=true enabled=$isEnabled")
 
@@ -438,14 +467,13 @@ class OneTapAccessibilityService : AccessibilityService() {
                 currentStep = A11yCleanStep.WAIT_AFTER_CLEAR
                 mainHandler.postDelayed({
                     triggerDoubleBackReturn(targetPkg)
-                }, 800)
+                }, 400)
                 return
             }
 
             isActionInProgress = true
             currentStep = A11yCleanStep.CLEAR_CACHE_CLICKED
 
-            // Human delay: 500-750ms before clicking "Clear cache"
             mainHandler.postDelayed({
                 val clicked = performNodeClick(clearCacheNode)
                 android.util.Log.d("CACHE", "[CACHE][A11Y] package=$targetPkg action=CLICK_CLEAR_CACHE success=$clicked")
@@ -455,13 +483,13 @@ class OneTapAccessibilityService : AccessibilityService() {
                     Toast.makeText(this, "Cache Cleared ✓", Toast.LENGTH_SHORT).show()
                 }
 
-                // CRITICAL TIMING: Wait 1800-2200ms after clicking clear cache so Android
-                // finishes deletion, updates system stats & flushes UI
+                // Give Android time to delete the files and update storage stats before leaving;
+                // NetDiag re-checks the size on return and retries the read if it hasn't changed yet
                 android.util.Log.d("CACHE", "[CACHE][A11Y] package=$targetPkg action=WAIT_AFTER_CLEAR")
                 mainHandler.postDelayed({
                     triggerDoubleBackReturn(targetPkg)
-                }, 1900)
-            }, 600)
+                }, 1200)
+            }, 250)
         } else {
             scheduleClearCacheRetry(targetPkg)
         }
@@ -493,13 +521,13 @@ class OneTapAccessibilityService : AccessibilityService() {
         // First back: from Storage screen to App Info
         performGlobalAction(GLOBAL_ACTION_BACK)
 
-        // Wait 600ms before second back: from App Info to NetDiag
+        // Second back: from App Info to NetDiag
         mainHandler.postDelayed({
             performGlobalAction(GLOBAL_ACTION_BACK)
             mainHandler.postDelayed({
                 resetAutomationState()
-            }, 500)
-        }, 600)
+            }, 400)
+        }, 400)
     }
 
     private fun triggerFallbackReturn(targetPkg: String) {
