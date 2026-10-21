@@ -1,468 +1,187 @@
-# NetDiag Utility — Network Diagnostics & Cellular Suite
+# NetDiag Utility
 
-[![Platform](https://img.shields.io/badge/Platform-Android%208.0%2B%20(API%2026--35)-brightgreen.svg)](https://developer.android.com)
-[![Tested On](https://img.shields.io/badge/Verified-Android%2014%20%2F%2015%20(Realme%20%7C%20Pixel%20%7C%20Samsung)-blue.svg)](https://developer.android.com)
-[![Language](https://img.shields.io/badge/Language-Kotlin%202.0-blue.svg)](https://kotlinlang.org)
-[![UI](https://img.shields.io/badge/UI-Jetpack%20Compose%20%2B%20Material%203-teal.svg)](https://developer.android.com/jetpack/compose)
-[![DI](https://img.shields.io/badge/DI-Hilt%20Dagger-orange.svg)](https://dagger.dev/hilt/)
-[![Privacy](https://img.shields.io/badge/Privacy-100%25%20On--Device%20%7C%20Zero%20Tracking-success.svg)](#-data-privacy--security-architecture)
+**Network tests, cell & SIM details, and a one-tap cache cleaner — in one Android app.**
 
-**NetDiag Utility** is a carrier-grade network diagnostics and device utility suite built with modern Android architecture and Jetpack Compose (Material 3). It unites high-density baseband telemetry (carrier-grade baseband decoding), multi-stage latency diagnostics, radio mode policy management, a floating OneTap accessibility assistant, and an honest, byte-accurate application cache-cleaning engine.
+[![Android](https://img.shields.io/badge/Android-8.0%2B%20(API%2026--35)-brightgreen.svg)](https://developer.android.com)
+[![Kotlin](https://img.shields.io/badge/Kotlin-2.0-blue.svg)](https://kotlinlang.org)
+[![Jetpack Compose](https://img.shields.io/badge/UI-Jetpack%20Compose%20%2B%20Material%203-teal.svg)](https://developer.android.com/jetpack/compose)
+[![No ads or analytics](https://img.shields.io/badge/Ads%20%2F%20Analytics-None-success.svg)](#-privacy)
 
----
+NetDiag replaces three apps you'd normally install separately:
 
-## 🎯 What Problems Does NetDiag Utility Solve?
+| Instead of… | NetDiag gives you |
+|---|---|
+| A **ping / speed test** app | Speed test, ping (HTTP / TCP / ICMP), DNS, port, website and traceroute tests, with history |
+| **NetMonster** or a hidden `*#*#4636#*#*` menu | Live signal (RSRP / RSRQ / SINR), serving & neighbour cells, bands, 4G/5G (NSA/SA), dual-SIM, VoLTE status |
+| A **one-tap cache cleaner** | Real per-app cache sizes and automatic "Clear cache" through Android Settings |
 
-### 1. The "Fake Cleaner" & Battery Drain Epidemic
-Most mobile cleaners on the Play Store rely on deceptive tactics:
-- They claim to "boost RAM" by aggressively killing background processes—triggering immediate system respawns that consume CPU cycles and drain battery life.
-- They show fake animation sweepers and fabricated megabyte counts.
-- **The NetDiag Solution**: Zero fake numbers. NetDiag queries Android's official `StorageStatsManager` to measure real application cache sizes down to the exact byte. It exclusively targets volatile cache directories (`cache/` and `code_cache/`), completely isolating and safeguarding user data, credentials, databases, and media.
-
-### 2. Locked & Inconsistent Baseband Menus
-Secret dialer codes like `*#*#4636#*#*` are frequently disabled or locked by OEMs (Samsung, Xiaomi, Realme, carrier-branded devices).
-- **The NetDiag Solution**: Provides an instant, carrier-grade radio engineering dashboard. Without root or proprietary codes, users can view live Physical Cell ID (PCI), Tracking Area Code (TAC), 3GPP Band designations (`B3`, `B40`, `n78`), derived eNodeB/gNodeB IDs, Timing Advance distance, and real-time signal quality.
-
-### 3. Data-Hungry Speed Tests vs. True Latency Breakdown
-Traditional internet speed tests download 50–150 MB of data to measure peak throughput, quickly consuming cellular data caps while failing to identify why a connection feels laggy.
-- **The NetDiag Solution**: Executes lightweight, zero-waste multi-protocol latency probes. In under 1 MB, NetDiag dissects the full connection lifecycle: **DNS Resolution**, **TCP Handshake**, **TLS Negotiation**, and **Time-To-First-Byte (TTFB)**.
-
-### 4. Fragmented Network Tools
-Users typically need 3–4 separate apps to inspect cell towers, ping servers, switch network modes, and inspect device storage.
-- **The NetDiag Solution**: A single, unified, privacy-respecting engineering suite that unifies all four domains into a cohesive Material 3 design system.
+No root, no ads, no accounts, no analytics.
 
 ---
 
-## ⚙️ SDE Engineering Pillars: Usability, Maintainability & UI Ergonomics
-
-As a software development engineer (SDE) architecting this system, the codebase was constructed on four core software engineering tenets:
-
-### 1. 🎯 Frictionless Usability (Ease of Use)
-- **Zero-Friction Access**: Telemetry is immediately visible upon launch. Users never need to navigate through nested settings trees or expand collapsed accordions to find RSRP, SINR, or Band numbers.
-- **Single-Tap Dual SIM State Switching**: A single tap on `[ SIM 1 ]` or `[ SIM 2 ]` re-binds the entire telemetry engine, preventing cross-SIM cognitive confusion.
-- **Movable Floating Access**: The `OneTapAccessibilityService` brings live baseband telemetry and cache diagnostic triggers anywhere in the OS via an edge-snapping, draggable overlay.
-- **Defensive Confirmation Boundaries**: Destructive actions are guarded by explicit confirmation dialogs that clearly articulate the estimated removable bytes and verify that application databases will remain untouched.
-
-### 2. 🧩 High Maintainability & Modular Architecture
-- **Clean Architecture & Strict Separation of Concerns (SoC)**: Business logic, baseband decoding algorithms, and raw storage measurements are decoupled from UI composables.
-- **Unidirectional Data Flow (UDF)**: ViewModels emit immutable, strongly-typed `StateFlow<T>` models. Composables emit lambda events back to ViewModels. Zero two-way mutable state leakage.
-- **Dependency Inversion via Hilt / Dagger**: All repositories, schedulers, and framework services are injected as singletons. Concrete classes depend on domain abstractions rather than direct HAL calls, ensuring testability.
-- **Zero Leaky Framework Abstractions**: Android platform classes (`CellInfoLte`, `CellInfoNr`, `StorageStats`) are immediately mapped into immutable domain models (`CellData`, `SimSubscription`, `AppStorageInfo`) at the repository boundary, shielding the presentation layer from OS deprecations.
-- **Robust Code Hygiene & DRY Principles**: Reusable components are centralized in `CommonComponents.kt`; redundant prototype files are purged; hardcoded OEM brand models are replaced with dynamic system queries.
-
-### 3. 🖥️ Clear UI & Visual Ergonomics (Reduced Cognitive Load)
-- **High Information Density Without Visual Fatigue**: Engineered according to professional RF engineering principles, telemetry is laid out in a calibrated 2×2 grid (`RSRP`, `RSRQ`, `RSSI`, `SINR`) that can be scanned in milliseconds.
-- **Calibrated 3GPP Semantic Color Hierarchy**: Diagnostic health is color-coded using established 3GPP thresholds:
-  - `StatusGreen` (`#22B573`): Excellent radio reception / successful probe
-  - `AccentCyan` (`#4DD4EC` dark / `#00838F` light): Good reception / primary action highlight
-  - `StatusAmber` (`#E9A23B`): Fair signal / special access required
-  - `StatusRed` (`#E5534B`): Poor signal / packet drop / unsupported operation
-  - Mid-tone values chosen to stay readable on both the dark navy and white surfaces.
-- **Monospace Numerical Clarity**: All critical values (decibels, milliseconds, frequencies, byte sizes) are rendered in monospace typography with explicit units (`dBm`, `dB`, `ms`, `MHz`, `MB`), preventing ambiguities. Body text and buttons use the system sans-serif for readability.
-- **Zero Gimmicks / Deceptive Progress**: No fake spinning gauges, phone "temperature" thermometers, or artificial percent boosters. Progress bars strictly track real completed operations ($X / Y$).
-
-### 4. ⚡ Runtime Performance & Hardware Resilience
-- **Non-Blocking Asynchronous Concurrency**: All telephony queries, storage iterations, and network probes are executed off the main thread on `Dispatchers.IO`.
-- **Low Memory & CPU Footprint**: The application maintains a lightweight memory footprint (<60 MB RSS) and strictly cancels background coroutines when screens leave the backstack.
-- **Defensive Multi-Version Fallbacks**: Built to gracefully handle device quirks and API variations across Android 8.0 through Android 15 (e.g., handling missing CSI metrics on MediaTek HALs or restricted carrier permissions).
+## Contents
+- [Features](#-features)
+- [Install](#-install)
+- [Permissions](#-permissions)
+- [Privacy](#-privacy)
+- [What Android doesn't allow](#-what-android-doesnt-allow)
+- [Build from source](#-build-from-source)
+- [Project structure](#-project-structure)
+- [Changelog](#-changelog)
 
 ---
 
-## 📱 Compatibility & System Requirements
+## ✨ Features
 
-### Android OS Version Support
+The app has four tabs — **Home · Tests · My Phone · Tools** — plus **Settings** (⚙). On tablets, foldables and in landscape the tabs move to a side rail.
 
-| Android Version | API Level | Support Status | Notes |
-|:---|:---|:---|:---|
-| **Android 15** | API 35 | **Full Support (Target)** | Modern 16 KB page size compatible, strict edge-to-edge layout |
-| **Android 14** | API 34 | **Full Support (Tested)** | Verified on Realme UI 5.0 (`RMX5116IN`), Pixel, and One UI 6 |
-| **Android 13** | API 33 | **Full Support** | Per-app language, runtime notification permissions |
-| **Android 12 / 12L**| API 31–32 | **Full Support** | Material You Dynamic Color integration |
-| **Android 11** | API 30 | **Full Support** | Enhanced NR NSA/SA telephony callbacks |
-| **Android 10** | API 29 | **Full Support** | CellInfoNr baseband metrics |
-| **Android 9.0 Pie** | API 28 | **Full Support** | CellIdentity bandwidth metrics |
-| **Android 8.0 / 8.1**| API 26–27 | **Minimum Supported** | Base requirements (Adaptive icons, Notification channels) |
+### Home
+- **Check my connection** — one tap runs a full checkup (network, router, DNS, internet, HTTP/HTTPS) and shows what's wrong.
+- **Connection status** — Wi-Fi or mobile data, signal and carrier at a glance.
+- Shortcuts to Speed test, Ping and Signal; your last test result.
+- **Search** any tool and **pin favourites**; reorder Home sections.
 
-### Verified Device Ecosystems
-- **Realme & Oppo** (Realme UI / ColorOS — verified on device `c314e283`)
-- **Google Pixel** (Stock Android 14/15, Tensor & Qualcomm platforms)
-- **Samsung Galaxy** (One UI 5/6, Exynos & Snapdragon platforms)
-- **OnePlus** (OxygenOS 13/14)
-- **Xiaomi / Redmi / POCO** (HyperOS / MIUI)
-- **Motorola & Nothing OS**
+### Tests
+| Test | What it tells you |
+|---|---|
+| **Speed Test** | Download, upload, ping and jitter (via Cloudflare), with a live graph |
+| **Ping** | HTTP / TCP / ICMP latency, broken down into DNS → connect → TLS → first byte; live latency graph and packet-loss grid |
+| **Full Checkup** | Step-by-step check of every link from phone to internet |
+| **Website · DNS · Port · Traceroute** | Reachability of a site, DNS resolution, open ports, and the route to a host |
+| **History** | Every past result, repeatable with one tap |
 
-### Hardware Prerequisites
-- **Cellular Radio**: Baseband modem supporting GSM, UMTS, LTE (4G), or 5G NR (Sub-6 / mmWave).
-- **Dual SIM**: Supports Dual SIM Dual Standby (DSDS) and Dual SIM Active (DSDA) hardware configurations.
-- **Memory**: Minimum 2 GB RAM (optimized memory footprint < 60 MB at runtime).
+### My Phone
+- **Signal & cells** — RSRP, RSRQ, RSSI, SINR with quality colours; serving and neighbour cells with PCI, TAC, cell ID, eNodeB/gNodeB, band (e.g. `B3 1800 MHz`, `n78 3500 MHz`) and tower distance from timing advance. Adapts to 2G / 3G / 4G / 5G.
+- **5G mode** — Non-Standalone (NSA) vs Standalone (SA).
+- **Voice** — what calls use right now (VoLTE, VoNR, Wi-Fi calling, or 2G/3G fallback), what your carrier supports, and a **"last call" check measured during a real call**.
+- **Dual SIM** — switch between SIM 1 and SIM 2.
+- **Device** — RAM, storage, CPU, display, Android version, battery health and temperature.
 
----
+### Tools
+- **Cache Cleaner** — real cache sizes per app (from Android's storage stats, no made-up numbers). Select apps and NetDiag opens each app's Storage page and taps **Clear cache** for you. Works in any phone language. Never touches app data, logins, photos or files.
+- **OneTap bubble** — a floating button to reach NetDiag's tools from any app.
+- **IP Information** — public IPv4 / IPv6, ISP and location, **NAT type** (router NAT, carrier-grade NAT, 464XLAT), every network including **VoLTE / IMS** when visible, DNS, gateway, MTU, and **how each IP was assigned** (DHCP, carrier APN, SLAAC, VPN).
+- **Signal & SIM** — full cell view; **SIM Identity** with IMSI, phone number and ICCID masked until you tap to reveal.
+- **Subnet calculator** and **Network mode (4G/5G)** shortcut.
 
-## 🌟 Key Capabilities & Newly Added Features
-
-### 1. 📶 Carrier-Grade Cellular Diagnostics (2G, 3G, 4G, 5G Adaptive)
-- **Dynamic RAT Telemetry Adaptation**: Automatically alters the primary RF metric grid and technical identifiers according to the active generation:
-  - **2G (GSM / EDGE)**: `RSSI (dBm)`, `BER (Bit Error Rate)`, `Timing Advance`, and `BSIC (Base Station Identity Code)`.
-  - **3G (UMTS / WCDMA / HSPA+)**: `RSCP (dBm)`, `Ec/No (dB)`, `RSSI (dBm)`, and `PSC (Primary Scrambling Code)`.
-  - **4G (LTE / LTE-A)**: `RSRP (dBm)`, `RSRQ (dB)`, `RSSI (dBm)`, and `SINR (dB)`.
-  - **5G (NR SA / NR NSA)**: `SS-RSRP (dBm)`, `SS-RSRQ (dB)`, `CSI-RSRP (dBm)`, and `SS-SINR (dB)`.
-- **Serving Tower Distance Telemetry**:
-  - Live calculation using baseband Timing Advance (TA) steps: $TA \times 78.12\text{ m}$ for LTE, $TA \times 554\text{ m}$ for GSM. Prominently badged on the cellular dashboard.
-- **3GPP Calibrated Quality**: Real-time signal level bars (0–4) paired with standardized 3GPP signal quality classifications (`Excellent`, `Good`, `Fair`, `Poor`, or `N/A`).
-- **Dual SIM Binding**: Seamlessly toggle between `[ SIM 1 ]` and `[ SIM 2 ]` subscriptions with individual carrier identities and active mobile data markers.
-- **Serving Cell & Secondary Carrier**:
-  - Automatically decodes EARFCN / NR-ARFCN into 3GPP frequency bands (e.g., `B3 (1800 MHz)`, `B40 (2300 MHz)`, `n78 (3500 MHz)`).
-  - Physical Cell ID (PCI), Tracking Area Code (TAC), Cell Identity (ECI / NCI).
-  - Derived **eNodeB ID / gNodeB ID** and Sector IDs (`ci shr 8` for LTE, `nci shr 14` for NR).
-  - Channel Bandwidth (MHz/kHz), Timing Advance, and CQI.
-  - Secondary carrier telemetry for **5G NSA** (`NR + LTE Anchor`).
-- **Neighbour Cells**: Compact list sorted by **Signal**, **Technology**, **PCI**, or **Frequency**.
-- **Configurable Live Polling**: Live update ticker supporting `Auto (5s)`, `1 sec`, `2 sec`, `5 sec`, and `Manual` refresh modes. Polling stops automatically when the screen is not visible.
-- **Location switch check**: Android returns no serving/neighbour cell data while the phone's Location switch is off, even with the permission granted; the app detects this and offers to open Location settings.
-
-### 2. 🚀 High-Speed Throughput & Speed Test Engine
-- **Multi-Phase Telemetry Engine**: Powered by Cloudflare Edge CDN multi-threaded HTTP/2:
-  - Phase 1: Real-time Ping and Jitter calculation.
-  - Phase 2: 25 MB Multi-chunk streaming downlink throughput test.
-  - Phase 3: Chunked POST uplink throughput test.
-- **Modern Circular Speedometer Gauge**:
-  - 270-degree sweeping arc with animated needle and live digital HUD readout (`%.1f Mbps`).
-  - Active gradient fill matching throughput speed tier.
-- **Live Throughput Waveform Canvas Graph**:
-  - Smooth monotone cubic curve (never overshoots below zero or above a peak) with gradient fill.
-  - Raw 100 ms samples are EMA-smoothed and the vertical scale eases to new peaks instead of snapping.
-- **Result Metrics**: Latency (ms), Jitter (ms), Download Average & Peak, Upload Average & Peak, Connection Grade.
-
-### 3. 🌐 Interactive Network Topology Flow Diagram & Battery Saver
-- **4-Node End-to-End Route Visualization**:
-  - `[ Device Local IP ] ──> [ Gateway IP ] ──> [ ISP / WAN Operator ] ──> [ Global DNS / Internet ]`
-- **Live Gateway Latency Probing**: Lightweight gateway echo test every 10 s (Wi-Fi only, screen visible only).
-- **Starts paused (`[ ▶ Start Live ]` / `[ ⏸ Stop ]`)**:
-  - The card is idle by default, so opening Home costs no animation frames or radio wake-ups; live mode is opt-in.
-
-### 4. ⚡ Ping Diagnostics with Oscilloscope Waveform & Packet Matrix
-- **Oscilloscope Waveform Graph**: Smooth monotone cubic curve over a fixed 30-probe window that slides left as each probe arrives, with an eased vertical scale.
-- **Packet Stream Matrix Grid**: 10-packet color-coded telemetry blocks (`Green` <45ms, `Cyan` <90ms, `Amber` high latency, `Red` packet drop).
-- **High-Tech Diagnostic Progress Bar**:
-  - Displays `"RUNNING IN 10 PROBES • STATUS: 20%"` with glowing animated neon lead-dot progress bar.
-  - Technical waterfall breakdown: DNS resolution, TCP handshake, TLS negotiation, and TTFB.
-
-### 5. 📱 Device & Hardware Telemetry Screen (`DeviceInfoScreen.kt`)
-- **System Memory (RAM) Diagnostics**: Total RAM, Available/Free RAM, Used RAM, percentage progress bar, low-memory threshold warnings.
-- **Internal Storage Diagnostics**: Exact byte-accurate storage calculation using `StatFs` (Total, Free, Used space in GB).
-- **Operating System & Platform**: Android Version, API Level, Security Patch level, Build number, Kernel version, Baseband radio.
-- **Processor & Display**: CPU core count, Architecture ABIs (`arm64-v8a`), Screen Resolution (`W × H px`), Screen density (`DPI`).
-- **Battery Telemetry**: Live Battery %, Status (Charging/Discharging), Health, Temperature (°C), Voltage (mV), Technology (`Li-ion`).
-
-### 6. 🔐 SIM Security & Identity Screen (`SimIdentityScreen.kt`)
-- **Sensitive Identifier Privacy Protection**:
-  - **IMSI (International Mobile Subscriber Identity)**: Masked by default with an Eye toggle `[ 👁 ]` and copy `[ 📋 ]`. **Android 10+ only gives the full IMSI to system/carrier apps**, so on those versions the app shows the public home-network part (MCC+MNC, e.g. `40445••••••••••`) and labels the rest as blocked. Full IMSI is shown on Android 9 and older.
-  - **MSISDN (Mobile Phone Number)**: Masked by default, Eye button to reveal and copy. Requires the **Phone numbers** permission (`READ_PHONE_NUMBERS`) on Android 11+; shows whether the number is missing because of the permission or because the carrier didn't store it on the SIM.
-  - **ICCID (SIM Chip Serial)**: Masked by default (e.g. `89918 •••••••••••••• 04`), Eye button to reveal and copy.
-- **Network Identifiers**: MCC, MNC, PLMN (`404045`), Country ISO, Subscription ID, physical SIM vs eSIM (eUICC) indicator.
-- **Privacy Shield Notice**: Reassures user that credentials are never transmitted off the device.
-
-### 7. 🔍 Universal Diagnostic Search & Favorite Service Runner
-- **Command Search Bar**: Real-time filtering across all diagnostic tools, tests, and services.
-- **Favorites / Pinned Services Row**: Star (`[ ★ / ☆ ]`) any diagnostic test to pin it directly to the Home Dashboard for instant access.
-- **Direct 1-Tap Runner**: Dedicated `[ ▶ RUN ]` button next to every search result to immediately launch that diagnostic.
-
-### 8. ⇅ Reorderable Drag-and-Drop Category Prioritization
-- **Customizable Dashboard Layout**: Reorder sections according to personal preference:
-  - Check My Connection, Connection Status, Quick Actions, My Device, Connection Path (default order).
-- **Tactile Drag & Drop**: Touch drag handles or use single-tap `[▲ Up]` and `[▼ Down]` priority arrow buttons.
-- **Persistent Preferences**: Preferences are saved locally and reloaded across app launches.
-
-### 9. 🧹 Real Application Cache Cleaner & Automated Accessibility Engine
-- **Zero Fake Numbers**: Inspects exact application cache and data allocations using Android's `StorageStatsManager` and `PACKAGE_USAGE_STATS`.
-- **Search & Persistent Multi-Selection**: Filter installed apps by name or package without losing previous selections across searches, complete with visible batch selection controls ("Select Visible", "Clear Selection").
-- **Robust Accessibility Automation Engine (`OneTapAccessibilityService`)**:
-  - Automates the native Android path: `App Info -> Storage & cache -> Clear cache -> Return to NetDiag -> Verify -> Advance`.
-  - **State Fencing**: Protected by state machines (`WAITING_FOR_APP_INFO`, `WAITING_FOR_STORAGE`, `STORAGE_CLICKED`, `WAITING_FOR_CLEAR_CACHE`, `CLEAR_CACHE_CLICKED`, `WAIT_AFTER_CLEAR`, `RETURNING_TO_APP`) to reject spurious accessibility window events.
-  - **UI Element Polling & Retries**: Asynchronously queries UI nodes (`Storage & cache`, `Clear cache`) with a 4.8s safety fallback timeout rather than blindly relying on coordinate clicking.
-  - **Human-Calibrated Delays**: Configured with 850–1100ms settling delays between screens, plus a mandatory **1900ms wait** after clicking "Clear cache" to permit the Android storage daemon to commit disk deletion before returning.
-  - **Sequential Queue Processing**: NetDiag verifies cache size deltas on resume (with asynchronous storage update retries) and enforces a 1200ms settling pause before initiating the next application in the batch queue.
-- **Safe & Non-Destructive**: Never deletes user documents, photos, or media, and strictly isolates volatile cache from persistent application data.
-- **Storage Overview**: Visual device storage breakdown (`Used` vs `Free` vs `Removable Cache`).
-- **Granular Sorting & Filtering**: Sort apps by Cache Size, App Name, or Total Size. Filter by `All`, `>10 MB`, `>50 MB`, `>100 MB`, `Selected`, or `Ignored`.
-
-### 10. 🎨 Calibrated Material 3 Design & Theme Engine
-- **Dark Mode & System Default Fix**: Dynamically maps semantic tokens to `MaterialTheme.colorScheme`, ensuring seamless switching between Light, Dark, and System Default themes.
-- **Engineering Navy / Cyan Aesthetics**: Tailored contrast ratios meeting WCAG AAA accessibility standards.
+### Settings
+- Light / dark / system theme, Material You colours.
+- **Permissions** — see every permission's status and **Allow** or **Revoke** it.
 
 ---
 
-## 🔐 Permissions & Access Architecture
+## 📲 Install
 
-NetDiag Utility operates with complete transparency regarding system privileges. Permissions are requested contextually: before any operation that needs one, a shared **"Permission required"** dialog (`PermissionGate`) lists what is missing and why, requests it (or opens the right Settings page), and runs the operation once granted.
+NetDiag isn't on the Play Store yet. Install the APK directly:
 
-| Permission | Category | Why It Is Needed | If Denied |
-|:---|:---|:---|:---|
-| **`ACCESS_FINE_LOCATION`** | Runtime | **Cellular Tower IDs**: Android security architecture couples baseband tower identifiers (`PCI`, `TAC`, `ECI`, `CellInfo`) to Location permissions because tower IDs can physically pinpoint a device. | Baseband RF metrics cannot be read; general connectivity still functions. |
-| **Location switch (system setting)** | Device setting | **Cell data delivery**: even with location permission, Android returns no `CellInfo` while the phone's Location switch is off. | Serving/neighbour cell data stays empty; the app offers to open Location settings. |
-| **`READ_PHONE_STATE`** | Runtime | **Multi-SIM Subscriptions**: Required to read active subscription cards, carrier names, slot indices, and network registration states. | Multi-SIM selector defaults to slot 0 with generic carrier labels. |
-| **`READ_PHONE_NUMBERS`** | Runtime | **SIM phone number (MSISDN)**: required on Android 11+ to read the number stored on the SIM. | Phone number shows "Needs Phone numbers permission". |
-| **`PACKAGE_USAGE_STATS`** | Special App Access | **Real Cache Sizes**: Required by Android's `StorageStatsManager` to inspect byte-accurate app storage breakdown (Cache, Data, App Code) without faking. | Cache Cleaner displays a permission setup card; fake numbers are never shown. |
-| **`SYSTEM_ALERT_WINDOW`** | Special App Access | **OneTap Overlay**: Enables the draggable floating shortcut pill above third-party applications. | OneTap floating pill is disabled; in-app diagnostic features work normally. |
-| **`BIND_ACCESSIBILITY_SERVICE`** | System Service | **OneTap Assistant**: Allows the floating trigger pill to capture touch events and provides assisted navigation to storage settings. | Floating overlay cannot be launched; all manual app features work. |
-| **`INTERNET`** | Normal | **Latency Diagnostics**: Required to execute HTTP and TCP socket latency probes against target hosts. | Ping and latency tests will fail. |
-| **`ACCESS_NETWORK_STATE`** | Normal | **Transport Observation**: Identifies whether the active connection is Wi-Fi, Cellular, Ethernet, or VPN, and checks internet validation. | Automatic transport identification is degraded. |
+1. Get `netdiag-v1.2.0-debug.apk` (or [build it](#-build-from-source)).
+2. Open it on your phone and allow **Install unknown apps** for the app you opened it from.
+3. Launch NetDiag and grant permissions when a feature asks for them — each request explains why.
 
----
+**Turning on the cache cleaner / OneTap (Android 13+):** because the app was installed from an APK, Android blocks its Accessibility switch with *"App was denied access to this setting"*. To allow it:
+1. Try the Accessibility switch once (so Android shows that message).
+2. Open **Settings → Apps → NetDiag**, tap **⋮** (top right) → **Allow restricted settings**.
+3. Turn on **Accessibility → OneTap Utility**.
 
-## 🛡️ Data Privacy & Security Architecture
-
-### 1. 100% On-Device & Zero Remote Tracking
-- **Zero Analytics SDKs**: NetDiag contains no Firebase Analytics, no Facebook Graph SDK, no Google Analytics, and no marketing trackers.
-- **No User Account Required**: The app functions completely without registration, email logins, phone numbers, or user profiling.
-- **Zero Network Telemetry**: Cellular telemetry measurements (PCI, TAC, Cell ID, signal power, neighbour cells) remain strictly in volatile device memory (RAM) and are **never uploaded** to any server or commercial tower database.
-
-### 2. Strict Non-Destructive Storage Operation
-- **Volatile Target Isolation**: Cache cleaning is restricted to operating-system cache partitions (`Context.getCacheDir()` and `Context.getCodeCacheDir()`).
-- **Data Protection Guarantee**: The cleaner will **never**:
-  - Delete user photos, videos, audio, or gallery files.
-  - Delete downloads or documents.
-  - Clear user databases, session tokens, or app login credentials.
-  - Uninstall applications or alter operating system configurations.
-
-### 3. Accessibility Service Privacy Policy
-The optional `OneTapAccessibilityService` complies with strict privacy guidelines:
-- **No Keystroke Logging**: It does not inspect text input fields, read passwords, or log user typing.
-- **No Screen Scraping**: It does not capture or transmit on-screen content or private messages.
-- **Zero Autonomous Destructive Actions**: It only taps "Storage & cache" / "Clear cache" inside Android Settings during a cleanup the user explicitly started, and never changes settings or deletes files otherwise.
-- **Minimal event subscription**: It listens only to window-change events (not every scroll or keystroke in other apps), which also keeps battery use low.
+Installing over USB (`./gradlew installDebug`) avoids this restriction.
 
 ---
 
-## 🏗️ High-Level System Architecture
+## 🔐 Permissions
 
-NetDiag Utility is engineered around **Clean Architecture** principles and **Unidirectional Data Flow (UDF)**. Business logic, telemetry decoders, and storage analyzers are cleanly decoupled from the Jetpack Compose presentation layer:
+Every permission is asked for only when a feature needs it, with an explanation. You can review or revoke them anytime in **Settings → Permissions**.
 
-```
-┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                              PRESENTATION LAYER (COMPOSE)                              │
-│                                                                                        │
-│   NetworkScreen       PingScreen        CacheCleanerScreen     DashboardScreen         │
-│   ToolsScreen         TestsScreen       OneTapOverlayPill      AppNavigation           │
-└───────────────────────────────────────────┬────────────────────────────────────────────┘
-                                            │ User Intents & UI Events
-                                            ▼
-┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                              VIEWMODEL LAYER (STATEFLOW)                               │
-│                                                                                        │
-│   NetworkViewModel    PingViewModel     CacheViewModel         DashboardViewModel      │
-│   • Multi-SIM State   • Latency Streams • Storage Scan State   • Health Calculation    │
-│   • Live Refresh Job  • Probe Aggregator• Batch Cleanup Queue  • Onboarding Evaluator  │
-└───────────────────────────────────────────┬────────────────────────────────────────────┘
-                                            │ Domain Invocations (Coroutines)
-                                            ▼
-┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                              DOMAIN & REPOSITORY LAYER                                 │
-│                                                                                        │
-│   TelephonyRepository    NetworkRepository     PingRepository      AppPreferencesRepo  │
-│   • 3GPP Band Decoding   • Interface Validator • DNS / TCP / TLS   • DataStore Proto   │
-│   • eNB / gNB Math       • Routing / DNS State • TTFB Measurement  • Theme / OneTap    │
-└───────────────────────────────────────────┬────────────────────────────────────────────┘
-                                            │ Android Framework Queries
-                                            ▼
-┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                         ANDROID PLATFORM & HARDWARE SUBSYSTEMS                         │
-│                                                                                        │
-│   TelephonyManager       ConnectivityManager   StorageStatsManager  WindowManager      │
-│   SubscriptionManager    LinkProperties        StatFs / AppOps      Accessibility      │
-│   CellInfo (LTE / 5G NR) NetworkCapabilities   UserHandle           Overlay Service    │
-└────────────────────────────────────────────────────────────────────────────────────────┘
-```
+| Permission | Used for | Without it |
+|---|---|---|
+| **Phone** (`READ_PHONE_STATE`) | SIM list, carrier, network type, voice status | SIM details and dual-SIM switching unavailable |
+| **Phone numbers** (`READ_PHONE_NUMBERS`) | Your SIM's phone number (Android 11+) | Number shown as unavailable |
+| **Location** + the phone's **Location switch** | Android only reveals cell towers (PCI, TAC, signal) with location access, and only while Location is on | Cell and signal details empty; everything else works |
+| **Usage access** (special) | Reading per-app cache sizes | Cache Cleaner can't list sizes |
+| **Accessibility** (special) | Tapping "Storage" → "Clear cache" in Settings for you; the OneTap bubble | Clear cache manually; OneTap off |
+| **Display over other apps** (special) | The OneTap floating bubble | Bubble unavailable |
+| Internet, network & Wi-Fi state, app list | Tests, IP info, listing apps for the cleaner | — |
 
-### Architectural Layer Responsibilities
-
-#### 1. Presentation Layer (`ui/`)
-- **Declarative & Stateless**: Built exclusively with Jetpack Compose and Material 3 design tokens.
-- **Unidirectional Data Flow (UDF)**: Composables only observe immutable `StateFlow` state and emit lambda events back to ViewModels.
-- **Single Activity Architecture**: All navigation transitions occur within `MainActivity` hosted by `AppNavigation.kt` (`NavHost` + a single 4-tab bottom bar: Home · Tests · My Phone · Tools).
-
-#### 2. ViewModel Layer (`ui/*/ViewModel.kt`)
-- **Lifecycle Aware**: Survives configuration changes and manages asynchronous coroutine jobs (`viewModelScope`).
-- **Reactive State Holders**: Exposes read-only `StateFlow<T>` streams to the UI, backed by internal `MutableStateFlow<T>`.
-- **Hardware Isolation**: Manages continuous background telemetry polling loops (with user-selected refresh rates) without blocking the Android UI thread.
-
-#### 3. Domain & Repository Layer (`data/repository/`, `domain/model/`)
-- **Data Normalization**: Transforms heterogeneous, raw framework objects (`CellInfoLte`, `CellInfoNr`, `StorageStats`) into clean, strongly-typed Kotlin domain models (`CellData`, `SimSubscription`, `AppStorageInfo`).
-- **Mathematical Decoders**: Houses pure mathematical calculations, including 3GPP channel-to-band conversions (`RadioBandUtils`), eNodeB / gNodeB derivations, and timing advance propagation estimates.
-
-#### 4. Android Platform & Subsystem Services
-- **Multi-SIM Telephony Engine**: Binds to individual SIM slots using `telephonyManager.createForSubscriptionId(subId)` to prevent cross-SIM data contamination.
-- **Byte-Accurate Storage Engine**: Interacts with Android's `StorageStatsManager` and `StatFs` to query real partition byte sizes.
-- **Floating Window Subsystem**: Manages the draggable overlay pill using `WindowManager` and Android's `AccessibilityService` APIs.
+The Accessibility service only reacts to Settings screens during a cleanup **you** started. It doesn't read what you type or what other apps show.
 
 ---
 
-## 💻 Technology Stack Summary
+## 🛡 Privacy
 
-- **Language**: Kotlin 2.0
-- **UI Toolkit**: Jetpack Compose with Material 3 Design Tokens
-- **Dependency Injection**: Hilt / Dagger (Singletons & ViewModels)
-- **Concurrency & Reactivity**: Kotlin Coroutines & `StateFlow`
-- **Navigation**: Jetpack Compose Navigation (`NavHost`, bottom `NavigationBar`, `tests?tab=` deep links)
-- **Data Persistence**: AndroidX DataStore Preferences (`AppPreferencesRepository`)
-- **System Telephony**: `TelephonyManager`, `SubscriptionManager`, `CellInfoLte`, `CellInfoNr`, `CellSignalStrength`
-- **Storage & Diagnostics**: `StorageStatsManager`, `StatFs`, `ConnectivityManager`
-- **Accessibility Service**: `AccessibilityService` for overlay window management
+- **No ads, analytics, trackers or accounts.**
+- **Cell, SIM and device details never leave the phone.** Test history and settings are stored only on the device.
+- **What does go online — only when you run that feature:**
 
----
-
-## 📁 Project Structure
-
-```
-app/src/main/
-├── AndroidManifest.xml
-├── java/com/netdiag/tool/
-│   ├── NetDiagApp.kt                  # Application class with @HiltAndroidApp
-│   ├── data/
-│   │   └── repository/
-│   │       ├── Repositories.kt        # Network, Telephony, Ping Repositories & RadioBandUtils
-│   │       └── AppPreferencesRepository.kt # DataStore preferences (Theme, OneTap, Onboarding)
-│   ├── di/
-│   │   └── AppModule.kt               # Hilt DI bindings for Singletons
-│   ├── domain/
-│   │   └── model/
-│   │       ├── Models.kt              # Ping, Cellular, SIM, Radio RAT, and Transition models
-│   │       └── CacheModels.kt         # AppStorageInfo, CacheScanSummary, CleanupResult models
-│   ├── service/
-│   │   └── OneTapAccessibilityService.kt # Floating overlay pill & quick actions
-│   └── ui/
-│       ├── MainActivity.kt            # Single Activity entry point
-│       ├── cache/
-│       │   ├── CacheCleanerScreen.kt  # Full Cache Cleaner UI & sheets
-│       │   └── CacheViewModel.kt      # StorageStatsManager scanner & clean orchestrator
-│       ├── components/
-│       │   ├── CommonComponents.kt   # Reusable KeyValueRow, EmptyState, NetworkStatusCard
-│       │   ├── PermissionGate.kt     # "Permission required" dialog before permission-gated operations
-│       │   └── SmoothChart.kt        # Monotone cubic curve helper for Ping / Speed graphs
-│       ├── dashboard/
-│       │   ├── DashboardScreen.kt     # Technical overview hub
-│       │   └── DashboardViewModel.kt
-│       ├── navigation/
-│       │   └── AppNavigation.kt       # 4-tab bottom bar (Home · Tests · My Phone · Tools) and routes
-│       ├── network/
-│       │   ├── NetworkScreens.kt      # NetMonster-grade cellular screen & mode screen
-│       │   └── NetworkViewModel.kt    # Dual-SIM binding, live ticker & neighbor sorting
-│       ├── onboarding/
-│       │   ├── SplashScreen.kt        # Animated AI brand logo launch
-│       │   ├── WelcomeScreen.kt
-│       │   ├── FeatureSlidesScreen.kt
-│       │   ├── PermissionChecklistScreen.kt # Live permission validator
-│       │   └── OneTapSetupScreen.kt
-│       ├── ping/
-│       │   ├── PingScreen.kt          # HTTP / TCP latency runner
-│       │   └── PingViewModel.kt
-│       ├── settings/
-│       │   └── SettingsScreen.kt      # Appearance theme & diagnostics options
-│       ├── tests/
-│       │   └── TestsScreen.kt         # Segmented Ping / Checkup / History hub
-│       ├── theme/
-│       │   ├── Color.kt               # Navy/Cyan engineering palette & semantic tokens
-│       │   ├── Theme.kt               # Material 3 Light/Dark/Dynamic scheme
-│       │   └── Type.kt                # Typography tokens
-│       └── tools/
-│           ├── ToolsScreen.kt         # Utilities hub (OneTap, Cache Cleaner, IP Info, Subnet, Signal & SIM, Mode)
-│           ├── IpInfoScreen.kt        # Public/local/VoLTE IPs, DNS, NAT type, how each IP was assigned
-│           └── SubnetCalculatorScreen.kt
-└── res/
-    ├── drawable/
-    │   └── app_logo.png               # AI-generated brand launcher icon
-    ├── values/
-    │   ├── colors.xml
-    │   ├── strings.xml
-    │   └── themes.xml
-    └── xml/
-        └── accessibility_service_config.xml
-```
+| Feature | Contacts |
+|---|---|
+| Speed Test | `speed.cloudflare.com` |
+| IP Information (public IP, ISP, location) | `api4.ipify.org`, `api6.ipify.org`, `ipv4.icanhazip.com`, `ipinfo.io` |
+| Checkup / connectivity checks | `dns.google`, `1.1.1.1`, `connectivitycheck.gstatic.com`, `www.google.com` |
+| Ping, Port, Website, DNS, Traceroute | The host you enter (default `google.com`) |
 
 ---
 
-## 🚀 What's New in v1.2.0
+## ⚠ What Android doesn't allow
 
-### Easier to use
-- **One navigation system**: the side drawer is gone; everything lives under the bottom bar **Home · Tests · My Phone · Tools**. Settings is the ⚙ icon.
-- **Home**: one big **"Check my connection"** button (opens and runs the full checkup), plus Speed test / Ping / Signal shortcuts. Plain-language section names.
-- **Tests**: everyday tests first (Speed Test, Ping, Full Checkup), advanced tools after (Website, DNS, Port, Traceroute, History).
-- **Permission pop-ups**: before any operation that needs a permission (cell info, SIM details, cache scan, OneTap), a dialog explains what is missing and why, then requests it or opens the right Settings page.
+NetDiag shows **only real values** — when Android doesn't provide something, the app says so instead of guessing.
 
-### IP Information (Tools → IP Information)
-- Public IPv4 **and** IPv6, ISP and approximate location, and **NAT type** (none, router NAT, carrier-grade NAT, 464XLAT).
-- Every network Android exposes, including **VoLTE / IMS** when the phone makes it visible: all addresses with their type, gateway, DNS, Private DNS (DoT), search domain, proxy, MTU, NAT64 prefix, metered/validated, bandwidth estimate.
-- **How each IP was assigned**, in plain language: DHCP server and lease (Wi-Fi), carrier APN/PDN session (mobile data, not DHCP), SLAAC (IPv6), VPN.
-- **All network interfaces**, flagging a mobile interface that no visible network uses as *likely VoLTE / IMS* (Android only lets system apps confirm IMS).
-
-### Smoother graphs
-- Ping and Speed Test use a shared monotone cubic curve, eased scaling and (for Ping) a sliding fixed-width window.
-
-### Battery
-- OneTap accessibility service listens only to window changes instead of every UI event in every app.
-- Live cell refresh "Auto" is every 5 s (was 2 s); Connection Path card starts paused and pings the gateway every 10 s.
-
-### Fixes
-- Crash when opening Network / Device Info (ViewModel initialisation order).
-- Crash when tapping Home's Checkup / "View all" links (missing `tests?tab=` route).
-- Wrong LTE (B26/B28) and 5G (n77/n79/n261) band labels.
-- Serving cell missing when the Location switch is off (now detected and explained).
-- MSISDN unreadable on Android 11+ (now requests `READ_PHONE_NUMBERS`).
+- **Full IMSI** — Android 10+ only gives it to system/carrier apps. NetDiag shows the public network part (MCC + MNC); full IMSI on Android 9 and older.
+- **Phone number** — only available if your carrier stored it on the SIM.
+- **IMS / VoLTE registration** — no public API for normal apps. NetDiag uses carrier settings, the live voice network, and a check during real calls instead.
+- **Cell data with Location off** — Android returns nothing; NetDiag offers to open Location settings.
+- **Silent cache clearing** — only system apps can clear other apps' caches directly, so NetDiag automates the official Settings screen.
+- **Network mode / band locking** — needs system permissions; NetDiag links to the right Android settings.
 
 ---
 
-## 🚀 What's New in v1.1.0 (Architecture & Features)
+## 🛠 Build from source
 
-### 1. SOLID Architecture & GoF Design Patterns
-- **Strategy Pattern (`domain/strategy/DiagnosticStrategy.kt`)**: Decouples network diagnostic test execution (HTTP, TCP socket, ICMP echo) into interchangeable algorithm strategies.
-- **Factory Pattern (`domain/strategy/PingStrategies.kt`)**: Dynamic `PingStrategyFactory` providing strategy instances to ViewModels without tight coupling.
-- **Registry Pattern (`domain/registry/AppServiceRegistry.kt`)**: Extensible registry supporting runtime registration, category filtering, and search indexing for all network and device diagnostic services.
-- **Type-Safe Route Pattern (`domain/model/AppRoute.kt`)**: Eliminates string literals across navigation graphs, bottom bars, drawer items, and the floating OneTap assistant.
-
-### 2. Live Diagnostic Progress Bar (`DiagnosticProgressBar.kt`)
-- Visual live telemetry displaying step progress (`"RUNNING IN 10 PROBES"`), badge status (`"STATUS: 20%"`), glowing gradient bar with pulsing tracking dot, and probe RTT readout.
-
-### 3. Reorderable Category Prioritization (`PrioritizeCategoriesSheet.kt`)
-- Direct drag-and-drop category prioritization with gesture detection (`detectDragGestures`) and single-tap `[▲ Up]` / `[▼ Down]` buttons. Persisted in `AppPreferencesRepository`.
-
-### 4. Universal Diagnostic Search & Favorite Service Runner (`ServiceSearchRunnerSheet.kt`)
-- Integrated search bar across all diagnostic suites, with a Star (`[ ★ ]`) favorite pinning row on the dashboard and instant `[ ▶ RUN ]` triggers.
-
-### 5. Device Info Screen (`DeviceInfoScreen.kt`)
-- Live RAM telemetry bar (`X.XX GB / Y.YY GB`), internal storage diagnostics via `StatFs`, CPU architecture/core count, Android OS specs, and battery health telemetry.
-
-### 6. SIM Security & Privacy Screen (`SimIdentityScreen.kt`)
-- Protects IMSI, MSISDN phone number, and ICCID behind shoulder-surfing privacy masks with interactive `[ 👁 ]` Eye unmask toggles and 1-tap clipboard copy buttons `[ 📋 ]`.
-
----
-
-## 🛠️ Build & Installation
-
-### Prerequisites
-- **Android Studio**: Iguana (2023.2.1) or newer
-- **JDK**: OpenJDK 17 or 21
-- **Android SDK**: Compile SDK `35` / Target SDK `35` / Min SDK `26` (Android 8.0)
-
-### Building via Command Line
+**Requirements:** Android Studio (Ladybug or newer), JDK 17, Android SDK 35.
 
 ```bash
-# Clone the repository
 git clone https://github.com/indrajeet125/netdiag-utility.git
 cd netdiag-utility
 
-# Build Debug APK  →  app/build/outputs/apk/debug/app-debug.apk
-./gradlew assembleDebug
-
-# Install on a USB-connected device (USB debugging on, "Allow USB debugging" accepted)
-./gradlew installDebug
+./gradlew assembleDebug     # APK → app/build/outputs/apk/debug/app-debug.apk
+./gradlew installDebug      # install on a phone connected with USB debugging
 ```
 
-To install by hand, copy the APK to the phone, open it, and allow "Install unknown apps" for your file manager when prompted.
+| | |
+|---|---|
+| Min / target SDK | 26 (Android 8.0) / 35 |
+| Kotlin / AGP | 2.0.21 / 8.7.3 |
+| Compose BOM | 2024.12.01 |
+| Hilt | 2.51.1 |
+
+> **Windows:** keep `kotlin.compiler.execution.strategy=in-process` in `gradle.properties`; the daemon strategy can time out on low-memory machines.
 
 ---
 
-## 🛡️ Safety & Integrity Guarantees
+## 🗂 Project structure
 
-1. **No Artificial / Fake Data**: If a modem or OEM firmware does not report a metric (e.g., CSI-SINR or neighbour cells), the UI displays `N/A`. It never fabricates numbers.
-2. **Non-Destructive Storage Operation**: Cache cleaning strictly targets temporary cache directories. User data, logins, downloads, and media files are never removed.
-3. **Respect for Platform Boundaries**: System-restricted actions (such as direct radio band locking without `MODIFY_PHONE_STATE`) are honestly communicated, and users are routed to native Android carrier settings.
+Single-activity app, Jetpack Compose UI, MVVM with `StateFlow`, Hilt for dependency injection.
+
+```
+app/src/main/java/com/netdiag/tool/
+├── data/repository/        Telephony, network, ping, preferences and test-history repositories
+├── domain/
+│   ├── model/              Data models, routes, dashboard sections, service registry entries
+│   ├── registry/           Searchable list of all tools
+│   └── strategy/           Ping strategies (HTTP / TCP / ICMP)
+├── service/                OneTapAccessibilityService — floating bubble + cache-clearing automation
+└── ui/
+    ├── navigation/         Tabs, side rail, routes and back-stack rules
+    ├── dashboard/          Home
+    ├── tests/ ping/ speed/ history/   Tests tab
+    ├── device/ network/    My Phone: device info, signal & cells, SIM identity, voice
+    ├── tools/ cache/       Tools: IP info, subnet calculator, cache cleaner
+    ├── settings/           Settings and the Permissions manager
+    ├── onboarding/         First-run walkthrough and permission checklist
+    ├── components/         Shared UI: permission prompt, charts, cards, search sheet
+    └── theme/              Colours and typography
+```
+
+---
+
+## 📝 Changelog
+
+See **[CHANGELOG.md](CHANGELOG.md)** for what changed in each version (v1.0.0 → v1.2.0).
