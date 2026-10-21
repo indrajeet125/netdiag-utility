@@ -209,6 +209,18 @@ fun rememberPermissionGate(): PermissionGate {
                             style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.error)
                         )
                     }
+                    // Android 13+ blocks accessibility for apps installed from an APK file ("restricted setting")
+                    if (AppPermission.ACCESSIBILITY in missing && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        Text(
+                            text = "If the switch says \"App was denied access to this setting\": open App info, tap ⋮ " +
+                                "(top right), choose \"Allow restricted settings\", then turn the service on again.",
+                            style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        )
+                        TextButton(onClick = {
+                            // Any runtime permission's settings page is this app's App info screen
+                            try { context.startActivity(AppPermission.PHONE.settingsIntent(context)) } catch (_: Exception) { }
+                        }) { Text("Open App info") }
+                    }
                 }
             },
             confirmButton = {
