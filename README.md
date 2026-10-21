@@ -76,7 +76,7 @@ The app has four tabs — **Home · Tests · My Phone · Tools** — plus **Sett
 
 NetDiag isn't on the Play Store yet. Install the APK directly:
 
-1. Get `netdiag-v1.2.0-debug.apk` (or [build it](#-build-from-source)).
+1. Download the latest `netdiag-vX.Y.Z.apk` from **[Releases](https://github.com/indrajeet125/netdiag-utility/releases/latest)** (or [build it](#-build-from-source)).
 2. Open it on your phone and allow **Install unknown apps** for the app you opened it from.
 3. Launch NetDiag and grant permissions when a feature asks for them — each request explains why.
 
@@ -86,6 +86,8 @@ NetDiag isn't on the Play Store yet. Install the APK directly:
 3. Turn on **Accessibility → OneTap Utility**.
 
 Installing over USB (`./gradlew installDebug`) avoids this restriction.
+
+> Had a test/debug build installed before? Uninstall it first — the release APK is signed with a different key, so Android won't install it over the old one.
 
 ---
 

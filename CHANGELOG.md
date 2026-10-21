@@ -5,7 +5,9 @@ NetDiag combines three tools in one app: a **ping / network test tool**, a **Net
 
 ---
 
-## v1.2.0 — in progress (branch `upgrade/v1.2.0`, versionCode 3)
+## v1.2.0 — 2026-10-21 (tag `v1.2.0`, versionCode 3)
+
+First signed release APK, published on GitHub Releases. Installs over earlier debug builds only after uninstalling them (different signing key).
 
 ### Easier to use
 - **One navigation system**: side drawer removed; everything lives under the bottom bar **Home · Tests · My Phone · Tools**. Settings is the ⚙ icon.
