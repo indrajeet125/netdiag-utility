@@ -148,6 +148,15 @@ data class SimSubscription(
     val isVoNR: Boolean = false,
     val isImsRegistered: Boolean = false,
     val videoCallingSupported: Boolean = false,
+    // Carrier config flags for this SIM; null = the carrier doesn't declare it
+    val volteSupported: Boolean? = null,
+    val vowifiSupported: Boolean? = null,
+    val vonrSupported: Boolean? = null,
+    /** Network voice is registered on right now, e.g. "4G LTE (VoLTE)" or "3G (calls don't use VoLTE)". */
+    val voiceNetwork: String = "Unknown",
+    /** What the most recent call actually used, measured during the call; null until a call is seen. */
+    val lastCallVoice: String? = null,
+    val lastCallTimeMs: Long? = null,
     val signalDbm: Int? = null,
     val nsaMode: String? = null
 )

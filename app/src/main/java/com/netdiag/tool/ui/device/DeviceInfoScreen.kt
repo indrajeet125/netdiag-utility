@@ -793,9 +793,18 @@ private fun SimDetailsSection(
             KeyValueRow(label = "Roaming", value = if (sim.info.isRoaming) "Roaming" else "Home")
             KeyValueRow(label = "Default Data SIM", value = if (sim.info.isDefaultData) "Yes" else "No")
             KeyValueRow(label = "RAT", value = sim.rat.label)
-            KeyValueRow(label = "IMS Registered", value = if (sim.isImsRegistered) "Registered ✓" else "Not Registered")
-            KeyValueRow(label = "VoLTE Available", value = if (sim.isVoLTE) "Available ✓" else "Unavailable")
-            KeyValueRow(label = "VoWiFi Available", value = if (sim.isVoWiFi) "Available ✓" else "Unavailable")
+            KeyValueRow(label = "Voice now", value = sim.voiceNetwork, isMonospace = false)
+            KeyValueRow(label = "Last call", value = sim.lastCallVoice ?: "Make a call to confirm", isMonospace = false)
+            KeyValueRow(
+                label = "VoLTE (carrier)",
+                value = when (sim.volteSupported) { true -> "Supported"; false -> "Not supported"; null -> "Not declared" },
+                isMonospace = false
+            )
+            KeyValueRow(
+                label = "Wi-Fi Calling (carrier)",
+                value = when (sim.vowifiSupported) { true -> "Supported"; false -> "Not supported"; null -> "Not declared" },
+                isMonospace = false
+            )
         }
     }
 

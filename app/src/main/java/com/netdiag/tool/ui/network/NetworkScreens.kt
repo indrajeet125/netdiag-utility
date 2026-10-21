@@ -774,28 +774,18 @@ fun CarrierSummaryBanner(sub: SimSubscription, activeRat: RadioAccessTechnology)
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    if (sub.isVoNR) {
-                        Text(
-                            text = "Vo5G ✓",
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                color = StatusGreen,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 11.sp
-                            )
-                        )
+                    // One badge for what voice is using right now (from the voice network type, not a guess)
+                    val (voiceBadge, voiceOk) = when {
+                        sub.isVoNR -> "VoNR" to true
+                        sub.isVoLTE -> "VoLTE" to true
+                        sub.isVoWiFi -> "Wi-Fi Calling" to true
+                        sub.voiceNetwork.startsWith("2G") || sub.voiceNetwork.startsWith("3G") -> "No VoLTE" to false
+                        else -> "Voice ?" to false
                     }
                     Text(
-                        text = "VoLTE ${if (sub.isVoLTE) "✓" else "✕"}",
+                        text = if (voiceOk) "$voiceBadge ✓" else voiceBadge,
                         style = MaterialTheme.typography.bodySmall.copy(
-                            color = if (sub.isVoLTE) StatusGreen else TextSecondary,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 11.sp
-                        )
-                    )
-                    Text(
-                        text = "VoWiFi ${if (sub.isVoWiFi) "✓" else "✕"}",
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            color = if (sub.isVoWiFi) StatusGreen else TextSecondary,
+                            color = if (voiceOk) StatusGreen else TextSecondary,
                             fontWeight = FontWeight.Bold,
                             fontSize = 11.sp
                         )
@@ -1532,11 +1522,8 @@ fun ImsVoiceSection(
 
             if (!isExpanded) {
                 Spacer(modifier = Modifier.height(6.dp))
-                val imsStatus = if (sub.isImsRegistered) "Registered ✓" else "Not registered"
-                val vonrStatus = if (sub.isVoNR) "Active" else "Off"
-                val volteStatus = if (sub.isVoLTE) "Available" else "Off"
                 Text(
-                    text = "IMS: $imsStatus  •  Vo5G: $vonrStatus  •  VoLTE: $volteStatus",
+                    text = "Voice now: ${sub.voiceNetwork}" + (sub.lastCallVoice?.let { "  •  Last call: $it" } ?: ""),
                     style = MaterialTheme.typography.bodySmall.copy(
                         color = TextSecondary,
                         fontFamily = FontFamily.Monospace,
@@ -1548,42 +1535,70 @@ fun ImsVoiceSection(
             } else {
                 Spacer(modifier = Modifier.height(10.dp))
 
+                // Live: which network voice uses right now
                 ImsCapabilityRow(
-                    label = "IMS Registration",
-                    isAvailable = sub.isImsRegistered,
-                    statusText = if (sub.isImsRegistered) "Registered ✓" else "Not registered",
+                    label = "Voice right now",
+                    isAvailable = sub.isVoLTE || sub.isVoNR || sub.isVoWiFi,
+                    statusText = sub.voiceNetwork,
                     infoKey = "IMS",
                     onShowInfo = onShowMetricInfo
                 )
+                // Confirmation: what the last real call used (measured during the call)
                 ImsCapabilityRow(
-                    label = "Vo5G / VoNR (Voice over 5G)",
-                    isAvailable = sub.isVoNR,
-                    statusText = if (sub.isVoNR) "Active ✓" else "Unavailable",
-                    infoKey = "VONR",
-                    onShowInfo = onShowMetricInfo
+                    label = "Last call",
+                    isAvailable = sub.lastCallVoice?.contains("confirmed") == true,
+                    statusText = sub.lastCallVoice?.let { result ->
+                        val time = sub.lastCallTimeMs?.let {
+                            java.text.SimpleDateFormat("d MMM, HH:mm", java.util.Locale.getDefault()).format(java.util.Date(it))
+                        }
+                        if (time != null) "$result • $time" else result
+                    } ?: "Make a call to confirm"
                 )
+
+                // Carrier support for this SIM (carrier config); "Not declared" when the carrier doesn't say
                 ImsCapabilityRow(
-                    label = "VoLTE (Voice over LTE)",
-                    isAvailable = sub.isVoLTE,
-                    statusText = if (sub.isVoLTE) "Available ✓" else "Unavailable",
+                    label = "VoLTE supported",
+                    isAvailable = sub.volteSupported == true,
+                    statusText = supportText(sub.volteSupported, inUse = sub.isVoLTE),
                     infoKey = "VOLTE",
                     onShowInfo = onShowMetricInfo
                 )
                 ImsCapabilityRow(
-                    label = "VoWiFi / IWLAN (Wi-Fi Calling)",
-                    isAvailable = sub.isVoWiFi,
-                    statusText = if (sub.isVoWiFi) "Active ✓" else "Inactive",
+                    label = "VoNR / Vo5G supported",
+                    isAvailable = sub.vonrSupported == true,
+                    statusText = supportText(sub.vonrSupported, inUse = sub.isVoNR),
+                    infoKey = "VONR",
+                    onShowInfo = onShowMetricInfo
+                )
+                ImsCapabilityRow(
+                    label = "Wi-Fi Calling supported",
+                    isAvailable = sub.vowifiSupported == true,
+                    statusText = supportText(sub.vowifiSupported, inUse = sub.isVoWiFi),
                     infoKey = "VOWIFI",
                     onShowInfo = onShowMetricInfo
                 )
                 ImsCapabilityRow(
                     label = "Video Calling (ViLTE)",
                     isAvailable = sub.videoCallingSupported,
-                    statusText = if (sub.videoCallingSupported) "Supported ✓" else "Unavailable"
+                    statusText = if (sub.videoCallingSupported) "Supported by carrier ✓" else "Not declared by carrier"
+                )
+
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "\"Supported\" comes from your carrier's settings for this SIM. Android doesn't let normal apps " +
+                        "read IMS registration directly, so the last call is the real confirmation.",
+                    style = MaterialTheme.typography.bodySmall.copy(color = TextSecondary, fontSize = 11.sp)
                 )
             }
         }
     }
+}
+
+private fun supportText(supported: Boolean?, inUse: Boolean): String = when {
+    inUse -> "In use now ✓"
+    supported == true -> "Supported by carrier ✓"
+    supported == false -> "Not supported by carrier"
+    else -> "Not declared by carrier"
 }
 
 @Composable

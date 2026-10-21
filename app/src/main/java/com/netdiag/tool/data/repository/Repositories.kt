@@ -106,12 +106,99 @@ class TelephonyRepository @Inject constructor(
         ) == android.content.pm.PackageManager.PERMISSION_GRANTED
     }
 
+    // ── Last-call voice check ──
+    // No public API tells a normal app whether IMS/VoLTE is registered. The most reliable signal is
+    // which network actually carries voice during a real call: LTE/NR/IWLAN = packet voice
+    // (VoLTE/VoNR/Wi-Fi calling); 2G/3G = circuit-switched fallback (CSFB), i.e. VoLTE not used.
+    private val callPrefs = context.getSharedPreferences("voice_calls", Context.MODE_PRIVATE)
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val callListenerSubIds = mutableSetOf<Int>()
+
+    @Suppress("MissingPermission")
+    private fun ensureCallListeners(subIds: List<Int>) {
+        if (!hasPhonePermission()) return
+        // Listeners must be registered on a Looper thread; refresh() may run on IO
+        mainHandler.post {
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    // One callback per SIM so calls on either SIM are seen
+                    subIds.filter { it !in callListenerSubIds }.forEach { subId ->
+                        val cb = object : TelephonyCallback(), TelephonyCallback.CallStateListener {
+                            override fun onCallStateChanged(state: Int) = onCallState(state)
+                        }
+                        telephonyManager.createForSubscriptionId(subId).registerTelephonyCallback(context.mainExecutor, cb)
+                        callListenerSubIds += subId
+                    }
+                } else if (callListenerSubIds.isEmpty()) {
+                    @Suppress("DEPRECATION")
+                    telephonyManager.listen(object : PhoneStateListener() {
+                        @Deprecated("Deprecated in Java")
+                        override fun onCallStateChanged(state: Int, phoneNumber: String?) = onCallState(state)
+                    }, PhoneStateListener.LISTEN_CALL_STATE)
+                    callListenerSubIds += -1
+                }
+            } catch (e: SecurityException) {
+                android.util.Log.w("NetDiag", "[VOICE] call listener not allowed: ${e.message}")
+            }
+        }
+    }
+
+    private fun onCallState(state: Int) {
+        if (state != TelephonyManager.CALL_STATE_OFFHOOK) return
+        // CSFB moves the call to 2G/3G within a few seconds of it starting, so sample after that
+        mainHandler.postDelayed({ sampleCallVoiceNetwork() }, 4_000L)
+        mainHandler.postDelayed({ sampleCallVoiceNetwork() }, 10_000L)
+    }
+
+    @Suppress("MissingPermission")
+    private fun sampleCallVoiceNetwork() {
+        try {
+            val subs = subscriptionManager?.activeSubscriptionInfoList.orEmpty()
+            val defaultVoiceSub = SubscriptionManager.getDefaultVoiceSubscriptionId()
+            subs.forEach { sub ->
+                val tm = telephonyManager.createForSubscriptionId(sub.subscriptionId)
+                val inCall = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    tm.callStateForSubscription != TelephonyManager.CALL_STATE_IDLE
+                } else {
+                    sub.subscriptionId == defaultVoiceSub || subs.size == 1
+                }
+                if (!inCall) return@forEach
+                val type = tm.voiceNetworkType
+                if (type == TelephonyManager.NETWORK_TYPE_UNKNOWN) return@forEach
+
+                val key = "sub_${sub.subscriptionId}"
+                val now = System.currentTimeMillis()
+                val prevTime = callPrefs.getLong("${key}_time", 0L)
+                val prevType = callPrefs.getInt("${key}_type", TelephonyManager.NETWORK_TYPE_UNKNOWN)
+                val sameCall = now - prevTime < 30_000L
+                // Within one call a fallback result wins: the phone may already be back on LTE at the later sample
+                val result = if (sameCall && !isPacketVoice(prevType)) prevType else type
+                callPrefs.edit()
+                    .putInt("${key}_type", result)
+                    .putLong("${key}_time", if (sameCall) prevTime else now)
+                    .apply()
+                android.util.Log.d("NetDiag", "[VOICE] sub=${sub.subscriptionId} call voice type=$type stored=$result")
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("NetDiag", "[VOICE] sample failed: ${e.message}")
+        }
+    }
+
+    private fun isPacketVoice(type: Int): Boolean =
+        type == TelephonyManager.NETWORK_TYPE_LTE || type == TelephonyManager.NETWORK_TYPE_NR ||
+            type == TelephonyManager.NETWORK_TYPE_IWLAN
+
     @Suppress("MissingPermission")
     fun refresh() {
         try {
             val hasPhone = hasPhonePermission()
             val hasLoc = hasLocationPermission()
             android.util.Log.d("NetDiag", "[PERM] hasPhone=$hasPhone hasLocation=$hasLoc")
+            if (hasPhone) {
+                try {
+                    ensureCallListeners(subscriptionManager?.activeSubscriptionInfoList.orEmpty().map { it.subscriptionId })
+                } catch (_: SecurityException) { }
+            }
 
             val subManager = context.getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE) as? SubscriptionManager
                 ?: SubscriptionManager.from(context)
@@ -446,32 +533,25 @@ class TelephonyRepository @Inject constructor(
             }
         }
 
-        // IMS / VoLTE / VoNR / VoWiFi
-        var isVoLTE = false
-        var isVoNR = false
-        var isVoWiFi = false
-        var isIms = false
-        try {
-            val networkType = subTm.networkType
-            val dataNetType = subTm.dataNetworkType
-            val is5G = rat == RadioAccessTechnology.NR_SA || rat == RadioAccessTechnology.NR_NSA ||
-                    networkType == TelephonyManager.NETWORK_TYPE_NR || dataNetType == TelephonyManager.NETWORK_TYPE_NR
-            val is4G = rat == RadioAccessTechnology.LTE || networkType == TelephonyManager.NETWORK_TYPE_LTE || dataNetType == TelephonyManager.NETWORK_TYPE_LTE
+        // IMS / VoLTE / VoNR / VoWiFi, from real signals only (no guessing from the data RAT or carrier name):
+        //  - "supported": the carrier's own config flags for this SIM (null when the carrier doesn't say)
+        //  - "in use": the network voice is registered on right now (LTE ⇒ VoLTE, NR ⇒ VoNR, IWLAN ⇒ Wi-Fi calling,
+        //    2G/3G ⇒ calls fall back to circuit-switched). Some modems report LTE while idle even with CSFB,
+        //    so the last-call check below is the confirmation.
+        val voiceType = try { subTm.voiceNetworkType } catch (_: Exception) { TelephonyManager.NETWORK_TYPE_UNKNOWN }
+        val isVoLTE = voiceType == TelephonyManager.NETWORK_TYPE_LTE
+        val isVoNR = voiceType == TelephonyManager.NETWORK_TYPE_NR
+        val isVoWiFi = voiceType == TelephonyManager.NETWORK_TYPE_IWLAN
 
-            if (is5G) {
-                isVoNR = true
-                isVoLTE = true
-                isIms = true
-            } else if (is4G || simInfo.carrierName.contains("Jio", ignoreCase = true)) {
-                isVoLTE = true
-                isIms = true
-            }
+        val carrierConfig = try {
+            (context.getSystemService(Context.CARRIER_CONFIG_SERVICE) as? CarrierConfigManager)
+                ?.getConfigForSubId(subInfo.subscriptionId)
+        } catch (_: Exception) { null }
+        fun carrierFlag(key: String): Boolean? = carrierConfig?.takeIf { it.containsKey(key) }?.getBoolean(key)
 
-            if (dataNetType == TelephonyManager.NETWORK_TYPE_IWLAN) {
-                isVoWiFi = true
-                isIms = true
-            }
-        } catch (_: Exception) { }
+        val callKey = "sub_${subInfo.subscriptionId}"
+        val lastCallTime = callPrefs.getLong("${callKey}_time", 0L).takeIf { it > 0L }
+        val lastCallVoice = lastCallTime?.let { voiceLabel(callPrefs.getInt("${callKey}_type", TelephonyManager.NETWORK_TYPE_UNKNOWN), duringCall = true) }
 
         // Comprehensive registration detection:
         // A device is registered if a serving cell is detected, or telephony serviceState is IN_SERVICE,
@@ -498,11 +578,33 @@ class TelephonyRepository @Inject constructor(
             isVoLTE = isVoLTE,
             isVoWiFi = isVoWiFi,
             isVoNR = isVoNR,
-            isImsRegistered = isIms,
-            videoCallingSupported = isIms,
+            // Packet voice is only possible over IMS, so this is a strong hint, not a confirmed registration
+            isImsRegistered = isVoLTE || isVoNR || isVoWiFi,
+            videoCallingSupported = carrierFlag("carrier_vt_available_bool") == true,
+            volteSupported = carrierFlag("carrier_volte_available_bool"),
+            vowifiSupported = carrierFlag("carrier_wfc_ims_available_bool"),
+            vonrSupported = carrierFlag("vonr_enabled_bool"),
+            voiceNetwork = voiceLabel(voiceType, duringCall = false),
+            lastCallVoice = lastCallVoice,
+            lastCallTimeMs = lastCallTime,
             signalDbm = signalDbm,
             nsaMode = nsaMode
         )
+    }
+
+    private fun voiceLabel(type: Int, duringCall: Boolean): String = when (type) {
+        TelephonyManager.NETWORK_TYPE_LTE -> if (duringCall) "VoLTE confirmed (call stayed on 4G)" else "4G LTE (VoLTE)"
+        TelephonyManager.NETWORK_TYPE_NR -> if (duringCall) "VoNR confirmed (call on 5G)" else "5G NR (VoNR)"
+        TelephonyManager.NETWORK_TYPE_IWLAN -> if (duringCall) "Wi-Fi calling confirmed" else "Wi-Fi (Wi-Fi calling)"
+        TelephonyManager.NETWORK_TYPE_GSM, TelephonyManager.NETWORK_TYPE_GPRS, TelephonyManager.NETWORK_TYPE_EDGE,
+        TelephonyManager.NETWORK_TYPE_CDMA, TelephonyManager.NETWORK_TYPE_1xRTT, TelephonyManager.NETWORK_TYPE_IDEN ->
+            if (duringCall) "Used 2G (no VoLTE)" else "2G (calls don't use VoLTE)"
+        TelephonyManager.NETWORK_TYPE_UMTS, TelephonyManager.NETWORK_TYPE_HSDPA, TelephonyManager.NETWORK_TYPE_HSUPA,
+        TelephonyManager.NETWORK_TYPE_HSPA, TelephonyManager.NETWORK_TYPE_HSPAP, TelephonyManager.NETWORK_TYPE_TD_SCDMA,
+        TelephonyManager.NETWORK_TYPE_EVDO_0, TelephonyManager.NETWORK_TYPE_EVDO_A, TelephonyManager.NETWORK_TYPE_EVDO_B,
+        TelephonyManager.NETWORK_TYPE_EHRPD ->
+            if (duringCall) "Used 3G (no VoLTE)" else "3G (calls don't use VoLTE)"
+        else -> "Unknown / no voice service"
     }
 
     private fun parseCellInfo(cellInfo: CellInfo): CellData? {
