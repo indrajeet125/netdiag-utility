@@ -5,6 +5,7 @@
 [![Android](https://img.shields.io/badge/Android-8.0%2B%20(API%2026--35)-brightgreen.svg)](https://developer.android.com)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.0-blue.svg)](https://kotlinlang.org)
 [![Jetpack Compose](https://img.shields.io/badge/UI-Jetpack%20Compose%20%2B%20Material%203-teal.svg)](https://developer.android.com/jetpack/compose)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![No ads or analytics](https://img.shields.io/badge/Ads%20%2F%20Analytics-None-success.svg)](#-privacy)
 
 NetDiag replaces three apps you'd normally install separately:
@@ -28,6 +29,7 @@ No root, no ads, no accounts, no analytics.
 - [Build from source](#-build-from-source)
 - [Project structure](#-project-structure)
 - [Changelog](#-changelog)
+- [License](#-license)
 
 ---
 
@@ -185,3 +187,9 @@ app/src/main/java/com/netdiag/tool/
 ## 📝 Changelog
 
 See **[CHANGELOG.md](CHANGELOG.md)** for what changed in each version (v1.0.0 → v1.2.0).
+
+---
+
+## 📄 License
+
+[MIT](LICENSE) © 2026 Indrajeet
